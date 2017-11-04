@@ -12,6 +12,7 @@
 #include "gamemodes/dm.h"
 #include "gamemodes/tdm.h"
 #include "gamemodes/ctf.h"
+#include "gamemodes/assault.h"
 #include "gamemodes/mod.h"
 
 enum
@@ -366,7 +367,8 @@ void CGameContext::CheckPureTuning()
 
 	if(	str_comp(m_pController->m_pGameType, "DM")==0 ||
 		str_comp(m_pController->m_pGameType, "TDM")==0 ||
-		str_comp(m_pController->m_pGameType, "CTF")==0)
+		str_comp(m_pController->m_pGameType, "CTF")==0 ||
+		str_comp(m_pController->m_pGameType, "Assault")==0)
 	{
 		CTuningParams p;
 		if(mem_comp(&p, &m_Tuning, sizeof(p)) != 0)
@@ -1495,6 +1497,8 @@ void CGameContext::OnInit(/*class IKernel *pKernel*/)
 		m_pController = new CGameControllerCTF(this);
 	else if(str_comp(g_Config.m_SvGametype, "tdm") == 0)
 		m_pController = new CGameControllerTDM(this);
+	else if(str_comp(g_Config.m_SvGametype, "assault") == 0)
+		m_pController = new CGameControllerAssault(this);
 	else
 		m_pController = new CGameControllerDM(this);
 
