@@ -35,10 +35,17 @@ private:
 
 	// times required to capture the flag for both teams
 	// team with lowest capture time wins
+	// if it's -1, it means that team hasn't had an assault round or currently is in one,
+	// and hasn't touched the flag yet
+	// if it's -2, then it means that teams has already had an assault round and wasn't
+	// able to touch the flag before time was up
 	float m_aCaptureTime[2];
 
 	// then it's gameover
 	bool m_FinishedAllAssault;
+
+	// give defense time to prepare
+	int m_AssaultTeamSpawnDelay;
 
 	CBroadcaster m_Broadcast;
 
@@ -48,7 +55,7 @@ private:
 	virtual void EndRound();
 
 	void StartAssault(bool ResetWorld = true);
-	void EndAssault();
+	void EndAssault(bool CapturedFlag = false);
 
 	void SetAssaultFlags();
 

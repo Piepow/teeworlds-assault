@@ -17,6 +17,7 @@ CPlayer::CPlayer(CGameContext *pGameServer, int ClientID, int Team)
 	m_ScoreStartTick = Server()->Tick();
 	m_pCharacter = 0;
 	m_AssaultTotalScore = 0;
+	m_AssaultCapturedFlagTeam = -1;
 	m_ClientID = ClientID;
 	m_Team = GameServer()->m_pController->ClampTeam(Team);
 	m_SpectatorID = SPEC_FREEVIEW;

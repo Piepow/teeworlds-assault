@@ -76,6 +76,7 @@ public:
 	int m_DieTick;
 	int m_Score;
 	int m_AssaultTotalScore;
+	int m_AssaultCapturedFlagTeam;
 	int m_ScoreStartTick;
 	bool m_ForceBalanced;
 	int m_LastActionTick;

@@ -1,7 +1,5 @@
 /* (c) Magnus Auvinen. See licence.txt in the root of the distribution for more information. */
 /* If you are missing that file, acquire a complete release at teeworlds.com.                */
-// TODO: REMOVE THIS
-#include <iostream>
 
 #include <engine/shared/config.h>
 
@@ -29,6 +27,7 @@ CGameControllerAssault::CGameControllerAssault(class CGameContext *pGameServer)
 	m_AssaultOverTick = -1;
 	m_AssaultStartTick = Server()->Tick();
 	m_FinishedAllAssault = false;
+	m_AssaultTeamSpawnDelay = g_Config.m_SvAssaultTeamSpawnDelay * Server()->TickSpeed();
 
 	Reset();
 }
@@ -94,13 +93,20 @@ void CGameControllerAssault::DoWincheck()
 		CFlag *F = m_pFlag;
 		if (F && F->m_pCarryingCharacter)
 		{
-			EndAssault();
+			EndAssault(true);
 		}
-
-
-		if(g_Config.m_SvTimelimit > 0 && (Server()->Tick() - m_AssaultStartTick) >= g_Config.m_SvTimelimit * Server()->TickSpeed() * 60)
+		else
 		{
-			EndAssault();
+			// or if time is up
+			int TimeLimitTicks = g_Config.m_SvAssaultTimelimit * 60 * Server()->TickSpeed();
+			if((Server()->Tick() - m_AssaultStartTick) >= TimeLimitTicks)
+			{
+				dbg_msg("fluffy", "m_AssaultStartTick`: %d", m_AssaultStartTick);
+				dbg_msg("fluffy", "m_AssaultOverTick: %d", m_AssaultOverTick);
+				dbg_msg("fluffy", "m_AssaultTeam: %d", m_AssaultTeam);
+				dbg_msg("fluffy", "EndAssault(false)");
+				EndAssault(false);
+			}
 		}
 	}
 }
@@ -113,11 +119,10 @@ bool CGameControllerAssault::CanSpawn(int Team, vec2 *pOutPos)
 	{
 		return false;
 	}
-	else if (
-		g_Config.m_SvAssaultTeamSpawnDelay &&
-		Server()->Tick() < m_AssaultStartTick + (g_Config.m_SvAssaultTeamSpawnDelay * Server()->TickSpeed()) &&
-		Team == m_AssaultTeam)
+	else if (m_AssaultTeamSpawnDelay > 0 && Team == m_AssaultTeam)
 	{
+		// Assault Team Spawn Delay
+		// give defense time to prepare
 		return false;
 	}
 	else
@@ -155,24 +160,6 @@ bool CGameControllerAssault::CanSpawn(int Team, vec2 *pOutPos)
 	}
 }
 
-// float CGameControllerAssault::EvaluateSpawnPos(CSpawnEval *pEval, vec2 Pos)
-// {
-// 	float Score = 0.0f;
-// 	CCharacter *pC = static_cast<CCharacter *>(GameServer()->m_World.FindFirst(CGameWorld::ENTTYPE_CHARACTER));
-// 	for(; pC; pC = (CCharacter *)pC->TypeNext())
-// 	{
-// 		// team mates are not as dangerous as enemies
-// 		float Scoremod = 1.0f;
-// 		if(pEval->m_FriendlyTeam != -1 && pC->GetPlayer()->GetTeam() == pEval->m_FriendlyTeam)
-// 			Scoremod = 0.5f;
-
-// 		float d = distance(Pos, pC->m_Pos);
-// 		Score += Scoremod * (d == 0 ? 1000000000.0f : 1.0f/d);
-// 	}
-
-// 	return Score;
-// }
-
 void CGameControllerAssault::StartRound()
 {
 	IGameController::StartRound();
@@ -181,14 +168,16 @@ void CGameControllerAssault::StartRound()
 	m_aCaptureTime[1] = -1.0f;
 	// based on default in constructor
 	m_AssaultTeam = TEAM_BLUE;
-	// reset AssaultTotalScores
+	// reset AssaultTotalScores and other stuff
 	for (int i = 0; i < MAX_CLIENTS; ++i)
 	{
 		if (GameServer()->m_apPlayers[i])
 		{
 			GameServer()->m_apPlayers[i]->m_AssaultTotalScore = 0;
+			GameServer()->m_apPlayers[i]->m_AssaultCapturedFlagTeam = -1;
 		}
 	}
+	m_AssaultTeamSpawnDelay = g_Config.m_SvAssaultTeamSpawnDelay * Server()->TickSpeed();
 	StartAssault(false);
 }
 
@@ -199,13 +188,13 @@ void CGameControllerAssault::EndRound()
 	// we have to do this so the client knows which team won (which ever has higher teamscore)
 	if (m_aCaptureTime[TEAM_RED] < m_aCaptureTime[TEAM_BLUE])
 	{
-		m_aTeamscore[TEAM_RED] = 1;
-		m_aTeamscore[TEAM_BLUE] = 0;
+			m_aTeamscore[TEAM_RED] = 1;
+			m_aTeamscore[TEAM_BLUE] = 0;
 	}
 	else if (m_aCaptureTime[TEAM_BLUE] < m_aCaptureTime[TEAM_RED])
 	{
-		m_aTeamscore[TEAM_RED] = 1;
-		m_aTeamscore[TEAM_BLUE] = 0;
+		m_aTeamscore[TEAM_RED] = 0;
+		m_aTeamscore[TEAM_BLUE] = 1;
 	}
 	else
 	{
@@ -214,28 +203,59 @@ void CGameControllerAssault::EndRound()
 		m_aTeamscore[TEAM_BLUE] = 1;	
 	}
 
+	// check for exceptions
+	if (m_aCaptureTime[TEAM_RED] == -2.0f)
+	{
+		m_aTeamscore[TEAM_RED] = -1;
+	}
+	if (m_aCaptureTime[TEAM_BLUE] == -2.0f)
+	{
+		m_aTeamscore[TEAM_BLUE] = -1;
+	}
+
 	// announce times
-	char aBuf[64];
 	GameServer()->SendChat(-1, -2, "┎─────────────────────");
-	GameServer()->SendChat(-1, -2, "┃ Blue team capture time: ");
-	str_format(aBuf, sizeof(aBuf), "┃ %s%d:%s%d.%s%d",
-		((int)m_aCaptureTime[TEAM_BLUE] / 60) < 10 ? "0" : "",
-		(int)m_aCaptureTime[TEAM_BLUE] / 60,
-		((int)m_aCaptureTime[TEAM_BLUE] % 60) < 10 ? "0" : "",
-		(int)m_aCaptureTime[TEAM_BLUE] % 60,
-		((int)(m_aCaptureTime[TEAM_BLUE] * 100) % 100) < 10 ? "0" : "",
-		(int)(m_aCaptureTime[TEAM_BLUE] * 100) % 100);
-	GameServer()->SendChat(-1, -2, aBuf);
+	if (m_aCaptureTime[TEAM_BLUE] == -2.0f)
+	{
+		// they were not able to capture the flag before time was up
+		GameServer()->SendChat(-1, -2, "┃ The blue team failed to");
+		GameServer()->SendChat(-1, -2, "┃ capture the flag");
+	}
+	else
+	{
+		// they captured the flag
+		GameServer()->SendChat(-1, -2, "┃ Blue team capture time:");
+		char aBuf[64];
+		str_format(aBuf, sizeof(aBuf), "┃ %s%d:%s%d.%s%d",
+			((int)m_aCaptureTime[TEAM_BLUE] / 60) < 10 ? "0" : "",
+			(int)m_aCaptureTime[TEAM_BLUE] / 60,
+			((int)m_aCaptureTime[TEAM_BLUE] % 60) < 10 ? "0" : "",
+			(int)m_aCaptureTime[TEAM_BLUE] % 60,
+			((int)(m_aCaptureTime[TEAM_BLUE] * 100) % 100) < 10 ? "0" : "",
+			(int)(m_aCaptureTime[TEAM_BLUE] * 100) % 100);
+		GameServer()->SendChat(-1, -2, aBuf);
+	}
 	GameServer()->SendChat(-1, -2, "┠─────────────────────");
-	GameServer()->SendChat(-1, -2, "┃ Red team capture time: ");
-	str_format(aBuf, sizeof(aBuf), "┃ %s%d:%s%d.%s%d",
-		((int)m_aCaptureTime[TEAM_RED] / 60) < 10 ? "0" : "",
-		(int)m_aCaptureTime[TEAM_RED] / 60,
-		((int)m_aCaptureTime[TEAM_RED] % 60) < 10 ? "0" : "",
-		(int)m_aCaptureTime[TEAM_RED] % 60,
-		((int)(m_aCaptureTime[TEAM_RED] * 100) % 100) < 10 ? "0" : "",
-		(int)(m_aCaptureTime[TEAM_RED] * 100) % 100);
-	GameServer()->SendChat(-1, -2, aBuf);
+	if (m_aCaptureTime[TEAM_RED] == -2.0f)
+	{
+		// they were not able to capture the flag before time was up
+		GameServer()->SendChat(-1, -2, "┃ The red team failed to");
+		GameServer()->SendChat(-1, -2, "┃ capture the flag");
+	}
+	else
+	{
+		// they captured the flag
+		GameServer()->SendChat(-1, -2, "┃ Red team capture time:");
+		char aBuf[64];
+		str_format(aBuf, sizeof(aBuf), "┃ %s%d:%s%d.%s%d",
+			((int)m_aCaptureTime[TEAM_RED] / 60) < 10 ? "0" : "",
+			(int)m_aCaptureTime[TEAM_RED] / 60,
+			((int)m_aCaptureTime[TEAM_RED] % 60) < 10 ? "0" : "",
+			(int)m_aCaptureTime[TEAM_RED] % 60,
+			((int)(m_aCaptureTime[TEAM_RED] * 100) % 100) < 10 ? "0" : "",
+			(int)(m_aCaptureTime[TEAM_RED] * 100) % 100);
+		GameServer()->SendChat(-1, -2, aBuf);
+	}
 	GameServer()->SendChat(-1, -2, "┖─────────────────────");
 
 	// set scores to AssaultTotalScores
@@ -265,42 +285,128 @@ void CGameControllerAssault::SetAssaultFlags()
 
 void CGameControllerAssault::StartAssault(bool ResetWorld)
 {
+	if (m_AssaultTeamSpawnDelay > 0)
+	{
+		// we will call StartAssault once the assault team spawns
+		return;
+	}
+
 	if (ResetWorld)
 	{
 		ResetGame();
 		Server()->DemoRecorder_HandleAutoStart();
 	}
 
-	m_AssaultStartTick = Server()->Tick();
+	// autofail - set timer to first assault team's flag cap time
+	if (!m_FinishedAllAssault)
+	{
+		// another way of saying "if it's the second assault round"
+		if (m_aCaptureTime[m_AssaultTeam ^ 1] != -1.0f)
+		{
+			int TimeLimitTicks = g_Config.m_SvAssaultTimelimit * 60 * Server()->TickSpeed();
+			if (m_aCaptureTime[m_AssaultTeam ^ 1] == -2.0f)
+			{
+				// first assault team failed to capture the flag
+				// this gives the second assault team the full amount allotted by sv_assault_timelimit
+				m_AssaultStartTick = Server()->Tick();
+			}
+			else
+			{
+				int FirstCaptureTicks = (int)(m_aCaptureTime[m_AssaultTeam ^ 1] * Server()->TickSpeed());
+				// because: Timer = Timelimit - (Tick - StartTick)
+				// and: Timer = CaptureTicks
+				// then: StartTick = (CaptureTicks - Timelimit) + Tick
+				m_AssaultStartTick = (FirstCaptureTicks - TimeLimitTicks) + Server()->Tick();
+			}
+
+			GameServer()->SendChat(-1, m_AssaultTeam, "┎─────────────────────");
+			GameServer()->SendChat(-1, m_AssaultTeam, "┃ Round 2: Attack");
+			GameServer()->SendChat(-1, m_AssaultTeam, "┖─────────────────────");
+			GameServer()->SendChat(-1, m_AssaultTeam, "‣ Capture the flag before time is up");
+
+			GameServer()->SendChat(-1, m_AssaultTeam ^ 1, "┎─────────────────────");
+			GameServer()->SendChat(-1, m_AssaultTeam ^ 1, "┃ Round 2: Defend");
+			GameServer()->SendChat(-1, m_AssaultTeam ^ 1, "┖─────────────────────");
+			GameServer()->SendChat(-1, m_AssaultTeam ^ 1, "‣ Defend the flag until time is up");
+		}
+		else
+		{
+			m_AssaultStartTick = Server()->Tick();
+
+			GameServer()->SendChat(-1, m_AssaultTeam, "┎─────────────────────");
+			GameServer()->SendChat(-1, m_AssaultTeam, "┃ Round 1: Attack");
+			GameServer()->SendChat(-1, m_AssaultTeam, "┖─────────────────────");
+			GameServer()->SendChat(-1, m_AssaultTeam, "‣ Capture the flag as fast as you can");
+			GameServer()->SendChat(-1, m_AssaultTeam, "‣ Your capture time determines the time you need to defend in Round 2 ");
+
+			GameServer()->SendChat(-1, m_AssaultTeam ^ 1, "┎─────────────────────");
+			GameServer()->SendChat(-1, m_AssaultTeam ^ 1, "┃ Round 1: Defend");
+			GameServer()->SendChat(-1, m_AssaultTeam ^ 1, "┖─────────────────────");
+			GameServer()->SendChat(-1, m_AssaultTeam ^ 1, "‣ Defend the flag as long as you can");
+			GameServer()->SendChat(-1, m_AssaultTeam ^ 1, "‣ The time you defend determines your time limit for attack in Round 2");
+		}
+	}
+
 	m_AssaultOverTick = -1;
 	SetAssaultFlags();
 }
 
-void CGameControllerAssault::EndAssault()
+void CGameControllerAssault::EndAssault(bool CapturedFlag)
 {
 	if (m_aCaptureTime[m_AssaultTeam] == -1.0f)
 	{
 		// record tick variables
 		m_AssaultOverTick = Server()->Tick();
-		m_aCaptureTime[m_AssaultTeam] = (Server()->Tick() - m_AssaultStartTick) / (float)Server()->TickSpeed();
 
-		// make pretty stuff around the flag
-		for(int i=0; i<6; i++)
+		// record capture time
+		if (CapturedFlag)
 		{
-			float angle = static_cast<float>(i) * 2.0 * pi / 6.0;
-			vec2 expPos = m_FlagPosition + vec2(100.0 * cos(angle), 100.0 * sin(angle));
-			GameServer()->CreatePlayerSpawn(expPos);
-		}
-
-		// kill everybody on the defending team
-		for(CCharacter *p = (CCharacter*) GameServer()->m_World.FindFirst(CGameWorld::ENTTYPE_CHARACTER); p; p = (CCharacter *)p->TypeNext())
-		{
-			if(p->GetPlayer()->GetTeam() != m_AssaultTeam)
+			// another way of saying "if it's the second assault round"
+			// but also we need to make sure that the other even has a cap time
+			if (m_aCaptureTime[m_AssaultTeam ^ 1] != -1.0f &&
+				m_aCaptureTime[m_AssaultTeam ^ 1] != -2.0f)
 			{
-				GameServer()->CreateExplosion(p->m_Pos, -1, WEAPON_GAME, true);
-				GameServer()->CreateSound(p->m_Pos, SOUND_GRENADE_EXPLODE);
-				p->Die(m_pFlag->m_pCarryingCharacter->GetPlayer()->GetCID(), WEAPON_NINJA);
+				// we had to do some weird shit in StartAssault() to make the timer show nicely,
+				// but that also made m_AssaultStartTick messed up,
+				// so we have to undo that here
+				int FirstCaptureTicks = (int)(m_aCaptureTime[m_AssaultTeam ^ 1] * Server()->TickSpeed());
+				int TimeLimitTicks = g_Config.m_SvAssaultTimelimit * 60 * Server()->TickSpeed();
+				int RealAssaultStartTick = m_AssaultStartTick - (FirstCaptureTicks - TimeLimitTicks);
+				m_aCaptureTime[m_AssaultTeam] = (Server()->Tick() - RealAssaultStartTick) / (float)Server()->TickSpeed();
 			}
+			else
+			{
+				m_aCaptureTime[m_AssaultTeam] = (Server()->Tick() - m_AssaultStartTick) / (float)Server()->TickSpeed();
+			}
+
+			// make pretty stuff around the flag
+			for(int i = 0; i < 6; i++)
+			{
+				float angle = static_cast<float>(i) * 2.0 * pi / 6.0;
+				vec2 PoofPos = m_FlagPosition + vec2(100.0 * cos(angle), 100.0 * sin(angle));
+				GameServer()->CreatePlayerSpawn(PoofPos);
+			}
+
+			// kill everybody on the defending team
+			for(CCharacter *p = (CCharacter*) GameServer()->m_World.FindFirst(CGameWorld::ENTTYPE_CHARACTER); p; p = (CCharacter *)p->TypeNext())
+			{
+				if(p->GetPlayer()->GetTeam() != m_AssaultTeam)
+				{
+					GameServer()->CreateExplosion(p->m_Pos, -1, WEAPON_GAME, true);
+					GameServer()->CreateSound(p->m_Pos, SOUND_GRENADE_EXPLODE);
+					if(m_pFlag->m_pCarryingCharacter)
+					{
+						p->Die(m_pFlag->m_pCarryingCharacter->GetPlayer()->GetCID(), WEAPON_NINJA);
+					}
+				}
+			}
+
+			// remember the player that captured the flag
+			m_pFlag->m_pCarryingCharacter->GetPlayer()->m_AssaultCapturedFlagTeam = m_AssaultTeam;
+		}
+		else
+		{
+			m_aCaptureTime[m_AssaultTeam] = -2.0f;
 		}
 
 		// record AssaultTotalScores
@@ -313,31 +419,46 @@ void CGameControllerAssault::EndAssault()
 		}
 
 		// announce assault capture and time
-		char aBuf[64];
-		str_format(aBuf, sizeof(aBuf), "The %s team captured the flag in: %s%d:%s%d.%s%d",
-			m_AssaultTeam ? "blue" : "red",
-			((int)m_aCaptureTime[m_AssaultTeam] / 60) < 10 ? "0" : "",
-			(int)m_aCaptureTime[m_AssaultTeam] / 60,
-			((int)m_aCaptureTime[m_AssaultTeam] % 60) < 10 ? "0" : "",
-			(int)m_aCaptureTime[m_AssaultTeam] % 60,
-			((int)(m_aCaptureTime[m_AssaultTeam] * 100) % 100) < 10 ? "0" : "",
-			(int)(m_aCaptureTime[m_AssaultTeam] * 100) % 100);
-		GameServer()->SendChat(-1, -2, aBuf);
-
-		// switch assault teams
-		m_AssaultTeam ^= 1;
+		if (m_aCaptureTime[m_AssaultTeam] == -2.0f)
+		{
+			// they were not able to capture the flag before time was up
+			char aBuf[64];
+			str_format(aBuf, sizeof(aBuf), "The %s team failed to capture the flag",
+				m_AssaultTeam ? "blue" : "red");
+			GameServer()->SendChat(-1, -2, aBuf);
+		}
+		else
+		{
+			// they captured the flag
+			char aBuf[64];
+			str_format(aBuf, sizeof(aBuf), "The %s team captured the flag in: %s%d:%s%d.%s%d",
+				m_AssaultTeam ? "blue" : "red",
+				((int)m_aCaptureTime[m_AssaultTeam] / 60) < 10 ? "0" : "",
+				(int)m_aCaptureTime[m_AssaultTeam] / 60,
+				((int)m_aCaptureTime[m_AssaultTeam] % 60) < 10 ? "0" : "",
+				(int)m_aCaptureTime[m_AssaultTeam] % 60,
+				((int)(m_aCaptureTime[m_AssaultTeam] * 100) % 100) < 10 ? "0" : "",
+				(int)(m_aCaptureTime[m_AssaultTeam] * 100) % 100);
+			GameServer()->SendChat(-1, -2, aBuf);
+		}
 	}
 
 	// check if both teams have capture times
+	m_FinishedAllAssault = true;
 	for (int i = 0; i < 2; ++i)
 	{
 		if (m_aCaptureTime[i] == -1.0f)
 		{
-			return;
+			m_FinishedAllAssault = false;
+			break;
 		}
 	}
-	// if reached here, then both teams have done assault
-	m_FinishedAllAssault = true;
+
+	// switch assault teams
+	m_AssaultTeam ^= 1;
+
+	// std::cout << "m_aCaptureTime[0]: " << m_aCaptureTime[0] << std::endl;
+	// std::cout << "m_aCaptureTime[1]: " << m_aCaptureTime[1] << std::endl;
 }
 
 bool CGameControllerAssault::CanBeMovedOnBalance(int ClientID)
@@ -371,7 +492,7 @@ void CGameControllerAssault::Snap(int SnappingClient)
 	pGameInfoObj->m_WarmupTimer = GameServer()->m_World.m_Paused ? m_UnpauseTimer : m_Warmup;
 
 	pGameInfoObj->m_ScoreLimit = g_Config.m_SvScorelimit;
-	pGameInfoObj->m_TimeLimit = g_Config.m_SvTimelimit;
+	pGameInfoObj->m_TimeLimit = g_Config.m_SvAssaultTimelimit;
 
 	pGameInfoObj->m_RoundNum = (str_length(g_Config.m_SvMaprotation) && g_Config.m_SvRoundsPerMap) ? g_Config.m_SvRoundsPerMap : 0;
 	pGameInfoObj->m_RoundCurrent = m_RoundCount+1;
@@ -413,6 +534,26 @@ void CGameControllerAssault::Snap(int SnappingClient)
 	{
 		pGameDataObj->m_FlagCarrierRed = FLAG_MISSING;
 		pGameDataObj->m_FlagCarrierBlue = FLAG_MISSING;
+	}
+
+	// at the end of the round, indicate which tees had captured a flag
+	if (m_GameOverTick != -1)
+	{
+		for (int i = 0; i < MAX_CLIENTS; ++i)
+		{
+			if (GameServer()->m_apPlayers[i] && GameServer()->m_apPlayers[i]->m_AssaultCapturedFlagTeam)
+			{
+				switch (GameServer()->m_apPlayers[i]->m_AssaultCapturedFlagTeam)
+				{
+					case TEAM_RED:
+						pGameDataObj->m_FlagCarrierBlue = GameServer()->m_apPlayers[i]->GetCID();
+						break;
+					case TEAM_BLUE:
+						pGameDataObj->m_FlagCarrierRed = GameServer()->m_apPlayers[i]->GetCID();
+						break;	
+				}
+			}
+		}
 	}
 }
 
@@ -459,9 +600,29 @@ void CGameControllerAssault::Tick()
 		++m_AssaultStartTick;
 	}
 
+	// don't factor assault team spawn delay into time calculation
+	if(m_AssaultTeamSpawnDelay > 0)
+	{
+		if(m_AssaultTeamSpawnDelay == g_Config.m_SvAssaultTeamSpawnDelay * Server()->TickSpeed())
+		{
+			// should trigger only once
+			char aBuf[64];
+			str_format(aBuf, sizeof(aBuf), "You will spawn in %d seconds", m_AssaultTeamSpawnDelay / Server()->TickSpeed());
+			GameServer()->SendChat(-1, m_AssaultTeam, aBuf);
+		}
+		--m_AssaultTeamSpawnDelay;
+		++m_AssaultStartTick;
+		++m_RoundStartTick;
+	}
+	else if (m_AssaultTeamSpawnDelay == 0)
+	{
+		m_AssaultTeamSpawnDelay = -1;
+		StartAssault(false);
+	}
+
 	if(m_FinishedAllAssault)
 	{
-		if(Server()->Tick() > m_AssaultOverTick + Server()->TickSpeed() * 5)
+		if(Server()->Tick() > m_AssaultOverTick + Server()->TickSpeed() * g_Config.m_SvAssaultCapturePostDelay)
 		{
 			EndRound();
 		}
@@ -471,7 +632,7 @@ void CGameControllerAssault::Tick()
 		if(m_AssaultOverTick != -1)
 		{
 			// assault over.. wait for restart
-			if(Server()->Tick() > m_AssaultOverTick + Server()->TickSpeed() * 5)
+			if(Server()->Tick() > m_AssaultOverTick + Server()->TickSpeed() * g_Config.m_SvAssaultCapturePostDelay)
 			{
 				StartAssault();
 				// m_Broadcast.Update(-1, "def", 5);
