@@ -113,6 +113,13 @@ bool CGameControllerAssault::CanSpawn(int Team, vec2 *pOutPos)
 	{
 		return false;
 	}
+	else if (
+		g_Config.m_SvAssaultTeamSpawnDelay &&
+		Server()->Tick() < m_AssaultStartTick + (g_Config.m_SvAssaultTeamSpawnDelay * Server()->TickSpeed()) &&
+		Team == m_AssaultTeam)
+	{
+		return false;
+	}
 	else
 	{
 		CSpawnEval Eval;
