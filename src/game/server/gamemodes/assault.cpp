@@ -614,7 +614,7 @@ void CGameControllerAssault::Tick()
 		++m_AssaultStartTick;
 		++m_RoundStartTick;
 	}
-	else if (m_AssaultTeamSpawnDelay == 0)
+	else if (g_Config.m_SvAssaultTeamSpawnDelay > 0 && m_AssaultTeamSpawnDelay == 0)
 	{
 		m_AssaultTeamSpawnDelay = -1;
 		StartAssault(false);
