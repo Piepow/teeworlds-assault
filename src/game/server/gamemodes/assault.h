@@ -32,6 +32,14 @@ private:
 	// game within a game
 	int m_AssaultOverTick;
 	int m_AssaultStartTick;
+	// we use this variable because m_AssaultStartTick has to be manipulated so that
+	// the correct value appears in the client's timer. But it doesn't accurately
+	// reflect the exact tick that round starts. So we use this instead. This is
+	// used in calculating the flag capture time.
+	int m_AssaultAbsoluteStartTick;
+
+	// I am calling StartAssault() once at the first tick
+	bool m_AssaultInitialized;
 
 	// times required to capture the flag for both teams
 	// team with lowest capture time wins

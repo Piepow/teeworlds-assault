@@ -27,7 +27,15 @@ CGameControllerAssault::CGameControllerAssault(class CGameContext *pGameServer)
 	m_AssaultOverTick = -1;
 	m_AssaultStartTick = Server()->Tick();
 	m_FinishedAllAssault = false;
-	m_AssaultTeamSpawnDelay = g_Config.m_SvAssaultTeamSpawnDelay * Server()->TickSpeed();
+	if (g_Config.m_SvAssaultTeamSpawnDelay > 0)
+	{
+		m_AssaultTeamSpawnDelay = g_Config.m_SvAssaultTeamSpawnDelay * Server()->TickSpeed();
+	}
+	else
+	{
+		m_AssaultTeamSpawnDelay = -1;
+	}
+	m_AssaultInitialized = false;
 
 	Reset();
 }
@@ -108,6 +116,21 @@ void CGameControllerAssault::DoWincheck()
 				EndAssault(false);
 			}
 		}
+
+	}
+	else if(
+		m_GameOverTick == -1 &&
+		!m_Warmup &&
+		!GameServer()->m_World.m_ResetRequested)
+	{
+		// check if it's time to end the entire round
+		if(m_FinishedAllAssault)
+		{
+			if(Server()->Tick() > m_AssaultOverTick)
+			{
+				EndRound();
+			}
+		}
 	}
 }
 
@@ -177,7 +200,15 @@ void CGameControllerAssault::StartRound()
 			GameServer()->m_apPlayers[i]->m_AssaultCapturedFlagTeam = -1;
 		}
 	}
-	m_AssaultTeamSpawnDelay = g_Config.m_SvAssaultTeamSpawnDelay * Server()->TickSpeed();
+	if (g_Config.m_SvAssaultTeamSpawnDelay > 0)
+	{
+		m_AssaultTeamSpawnDelay = g_Config.m_SvAssaultTeamSpawnDelay * Server()->TickSpeed();
+	}
+	else
+	{
+		m_AssaultTeamSpawnDelay = -1;
+	}
+	dbg_msg("fluffy", "from StartRound");
 	StartAssault(false);
 }
 
@@ -285,11 +316,23 @@ void CGameControllerAssault::SetAssaultFlags()
 
 void CGameControllerAssault::StartAssault(bool ResetWorld)
 {
+	dbg_msg("fluffy", "m_AssaultTeamSpawnDelay: %d", m_AssaultTeamSpawnDelay);
+	dbg_msg("fluffy", "m_aCaptureTime[m_AssaultTeam ^ 1]: %d", m_aCaptureTime[m_AssaultTeam ^ 1]);
+	dbg_msg("fluffy", "m_AssaultOverTick: %d", m_AssaultOverTick);
+
 	if (m_AssaultTeamSpawnDelay > 0)
 	{
 		// we will call StartAssault once the assault team spawns
+		dbg_msg("fluffy", "returned");
 		return;
 	}
+	// else if (m_AssaultTeamSpawnDelay == -1 && m_aCaptureTime[m_AssaultTeam ^ 1] != -1.0f && m_AssaultOverTick != -1)
+	// {
+	// 	// we are about to start the second round and we have to reset the spawn delay timer
+	// 	// m_AssaultTeamSpawnDelay = g_Config.m_SvAssaultTeamSpawnDelay * Server()->TickSpeed();
+	// 	dbg_msg("fluffy", "returned");
+	// 	return;
+	// }
 
 	if (ResetWorld)
 	{
@@ -347,6 +390,7 @@ void CGameControllerAssault::StartAssault(bool ResetWorld)
 		}
 	}
 
+	m_AssaultAbsoluteStartTick = Server()->Tick();
 	m_AssaultOverTick = -1;
 	SetAssaultFlags();
 }
@@ -358,26 +402,10 @@ void CGameControllerAssault::EndAssault(bool CapturedFlag)
 		// record tick variables
 		m_AssaultOverTick = Server()->Tick();
 
-		// record capture time
 		if (CapturedFlag)
 		{
-			// another way of saying "if it's the second assault round"
-			// but also we need to make sure that the other even has a cap time
-			if (m_aCaptureTime[m_AssaultTeam ^ 1] != -1.0f &&
-				m_aCaptureTime[m_AssaultTeam ^ 1] != -2.0f)
-			{
-				// we had to do some weird shit in StartAssault() to make the timer show nicely,
-				// but that also made m_AssaultStartTick messed up,
-				// so we have to undo that here
-				int FirstCaptureTicks = (int)(m_aCaptureTime[m_AssaultTeam ^ 1] * Server()->TickSpeed());
-				int TimeLimitTicks = g_Config.m_SvAssaultTimelimit * 60 * Server()->TickSpeed();
-				int RealAssaultStartTick = m_AssaultStartTick - (FirstCaptureTicks - TimeLimitTicks);
-				m_aCaptureTime[m_AssaultTeam] = (Server()->Tick() - RealAssaultStartTick) / (float)Server()->TickSpeed();
-			}
-			else
-			{
-				m_aCaptureTime[m_AssaultTeam] = (Server()->Tick() - m_AssaultStartTick) / (float)Server()->TickSpeed();
-			}
+			// record capture time
+			m_aCaptureTime[m_AssaultTeam] = (Server()->Tick() - m_AssaultAbsoluteStartTick) / (float)Server()->TickSpeed();
 
 			// make pretty stuff around the flag
 			for(int i = 0; i < 6; i++)
@@ -406,6 +434,7 @@ void CGameControllerAssault::EndAssault(bool CapturedFlag)
 		}
 		else
 		{
+			// -2 means no flag cap
 			m_aCaptureTime[m_AssaultTeam] = -2.0f;
 		}
 
@@ -454,11 +483,18 @@ void CGameControllerAssault::EndAssault(bool CapturedFlag)
 		}
 	}
 
+	// reset the spawn delay
+	if (g_Config.m_SvAssaultTeamSpawnDelay > 0)
+	{
+		m_AssaultTeamSpawnDelay = g_Config.m_SvAssaultTeamSpawnDelay * Server()->TickSpeed();
+	}
+	else
+	{
+		m_AssaultTeamSpawnDelay = -1;
+	}
+
 	// switch assault teams
 	m_AssaultTeam ^= 1;
-
-	// std::cout << "m_aCaptureTime[0]: " << m_aCaptureTime[0] << std::endl;
-	// std::cout << "m_aCaptureTime[1]: " << m_aCaptureTime[1] << std::endl;
 }
 
 bool CGameControllerAssault::CanBeMovedOnBalance(int ClientID)
@@ -559,14 +595,6 @@ void CGameControllerAssault::Snap(int SnappingClient)
 
 void CGameControllerAssault::Tick()
 {
-	// dbg_msg("fluffy", "m_RoundStartTick: %d", m_RoundStartTick);
-	// dbg_msg("fluffy", "m_GameOverTick: %d", m_GameOverTick);
-	// dbg_msg("fluffy", "m_AssaultStartTick: %d", m_AssaultStartTick);
-	// dbg_msg("fluffy", "m_AssaultOverTick: %d", m_AssaultOverTick);
-	// dbg_msg("fluffy", "m_AssaultTeam: %d", m_AssaultTeam);
-	// std::cout << "m_aCaptureTime[0]: " << m_aCaptureTime[0] << std::endl;
-	// std::cout << "m_aCaptureTime[1]: " << m_aCaptureTime[1] << std::endl;
-
 	// do warmup
 	if(!GameServer()->m_World.m_Paused && m_Warmup)
 	{
@@ -600,57 +628,68 @@ void CGameControllerAssault::Tick()
 		++m_AssaultStartTick;
 	}
 
-	// don't factor assault team spawn delay into time calculation
-	if(m_AssaultTeamSpawnDelay > 0)
+	// note: we also check this in DoWinCheck() to see if it's time to EndRound()
+	if (!m_FinishedAllAssault)
 	{
-		if(m_AssaultTeamSpawnDelay == g_Config.m_SvAssaultTeamSpawnDelay * Server()->TickSpeed())
+		// if m_AssaultTeamSpawnDelay is -1, then it means it's disabled. Ignore it.
+		if (m_AssaultTeamSpawnDelay != -1)
 		{
-			// should trigger only once
-			char aBuf[64];
-			str_format(aBuf, sizeof(aBuf), "You will spawn in %d seconds", m_AssaultTeamSpawnDelay / Server()->TickSpeed());
-			GameServer()->SendChat(-1, m_AssaultTeam, aBuf);
+			// don't factor assault team spawn delay into time calculation
+			if(m_AssaultTeamSpawnDelay > 0)
+			{
+				if(m_AssaultTeamSpawnDelay == g_Config.m_SvAssaultTeamSpawnDelay * Server()->TickSpeed())
+				{
+					// should trigger only once
+					char aBuf[64];
+					str_format(aBuf, sizeof(aBuf), "You will spawn in %d seconds", m_AssaultTeamSpawnDelay / Server()->TickSpeed());
+					GameServer()->SendChat(-1, m_AssaultTeam, aBuf);
+					str_format(aBuf, sizeof(aBuf), "The round will begin in %d seconds", m_AssaultTeamSpawnDelay / Server()->TickSpeed());
+					GameServer()->SendChat(-1, m_AssaultTeam ^ 1, aBuf);
+					m_AssaultStartTick = Server()->Tick();
+				}
+				--m_AssaultTeamSpawnDelay;
+				++m_AssaultStartTick;
+				++m_RoundStartTick;
+			}
+			else if (m_AssaultTeamSpawnDelay == 0)
+			{
+				m_AssaultTeamSpawnDelay = -1;
+				dbg_msg("fluffy", "from m_AssaultTeamSpawnDelay");
+				StartAssault(false);
+			}
 		}
-		--m_AssaultTeamSpawnDelay;
-		++m_AssaultStartTick;
-		++m_RoundStartTick;
+		else
+		{
+			// no spawn delay - we will just handle starting the next asault round based on the m_AssaultOverTick
+			if(m_AssaultOverTick != -1)
+			{
+				// assault over.. wait for restart
+				if(Server()->Tick() > m_AssaultOverTick)
+				{
+					dbg_msg("fluffy", "from m_AssaultOverTick");
+					StartAssault();
+				}
+				else
+				{
+					char aBuf[64];
+					str_format(aBuf, sizeof aBuf, "Switching teams in %d seconds",
+						5 - ((Server()->Tick() - m_AssaultOverTick) / Server()->TickSpeed()));
+					m_Broadcast.Update(-1, aBuf, 1);
+				}
+			}
+		}
 	}
-	else if (g_Config.m_SvAssaultTeamSpawnDelay > 0 && m_AssaultTeamSpawnDelay == 0)
+
+
+	// call this only on the first tick
+	if(!m_AssaultInitialized && !GameServer()->m_World.m_Paused)
 	{
-		m_AssaultTeamSpawnDelay = -1;
+		// I don't like how StartAssault() doesn't get called at the start of the server
+		// so I'm doing it now
+		dbg_msg("fluffy", "from m_AssaultInitialized");
 		StartAssault(false);
-	}
-
-	if(m_FinishedAllAssault)
-	{
-		if(Server()->Tick() > m_AssaultOverTick + Server()->TickSpeed() * g_Config.m_SvAssaultCapturePostDelay)
-		{
-			EndRound();
-		}
-	}
-	else
-	{
-		if(m_AssaultOverTick != -1)
-		{
-			// assault over.. wait for restart
-			if(Server()->Tick() > m_AssaultOverTick + Server()->TickSpeed() * g_Config.m_SvAssaultCapturePostDelay)
-			{
-				StartAssault();
-				// m_Broadcast.Update(-1, "def", 5);
-			}
-			else
-			{
-				char aBuf[64];
-				str_format(aBuf, sizeof aBuf, "Switching teams in %d seconds",
-					5 - ((Server()->Tick() - m_AssaultOverTick) / Server()->TickSpeed()));
-				m_Broadcast.Update(-1, aBuf, 1);
-			}
-		}
-	}
-
-	// call this only on the first tick hopefully
-	if(m_AssaultStartTick + 1 == Server()->Tick() && !GameServer()->m_World.m_Paused)
-	{
-		SetAssaultFlags();
+		m_AssaultInitialized = true;
+		// SetAssaultFlags();
 	}
 
 	// do team-balancing

@@ -84,10 +84,8 @@ MACRO_CONFIG_INT(SvVoteKick, sv_vote_kick, 1, 0, 1, CFGFLAG_SERVER, "Allow votin
 MACRO_CONFIG_INT(SvVoteKickMin, sv_vote_kick_min, 0, 0, MAX_CLIENTS, CFGFLAG_SERVER, "Minimum number of players required to start a kick vote")
 MACRO_CONFIG_INT(SvVoteKickBantime, sv_vote_kick_bantime, 5, 0, 1440, CFGFLAG_SERVER, "The time to ban a player if kicked by vote. 0 makes it just use kick")
 
-MACRO_CONFIG_INT(SvAssaultTeamSpawnDelay, sv_assault_team_spawn_delay, 0, 0, 1000, CFGFLAG_SERVER, "Delay in seconds for assault team to spawn")
 MACRO_CONFIG_INT(SvAssaultTimelimit, sv_assault_timelimit, 10, 0, 1000, CFGFLAG_SERVER, "Timelimit for the first assult team to capture the flag in minutes")
-MACRO_CONFIG_INT(SvAssaultCapturePostDelay, sv_assault_capture_postdelay, 0, 0, 1000, CFGFLAG_SERVER, "Seconds of delay after flag is captured and next assault round begins")
-
+MACRO_CONFIG_INT(SvAssaultTeamSpawnDelay, sv_assault_team_spawn_delay, 0, 0, 1000, CFGFLAG_SERVER, "Delay in seconds for assault team to spawn")
 
 // debug
 #ifdef CONF_DEBUG // this one can crash the server if not used correctly
