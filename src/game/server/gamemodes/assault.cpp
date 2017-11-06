@@ -109,10 +109,6 @@ void CGameControllerAssault::DoWincheck()
 			int TimeLimitTicks = g_Config.m_SvAssaultTimelimit * 60 * Server()->TickSpeed();
 			if((Server()->Tick() - m_AssaultStartTick) >= TimeLimitTicks)
 			{
-				dbg_msg("fluffy", "m_AssaultStartTick`: %d", m_AssaultStartTick);
-				dbg_msg("fluffy", "m_AssaultOverTick: %d", m_AssaultOverTick);
-				dbg_msg("fluffy", "m_AssaultTeam: %d", m_AssaultTeam);
-				dbg_msg("fluffy", "EndAssault(false)");
 				EndAssault(false);
 			}
 		}
@@ -208,7 +204,6 @@ void CGameControllerAssault::StartRound()
 	{
 		m_AssaultTeamSpawnDelay = -1;
 	}
-	dbg_msg("fluffy", "from StartRound");
 	StartAssault(false);
 }
 
@@ -316,21 +311,16 @@ void CGameControllerAssault::SetAssaultFlags()
 
 void CGameControllerAssault::StartAssault(bool ResetWorld)
 {
-	dbg_msg("fluffy", "m_AssaultTeamSpawnDelay: %d", m_AssaultTeamSpawnDelay);
-	dbg_msg("fluffy", "m_aCaptureTime[m_AssaultTeam ^ 1]: %d", m_aCaptureTime[m_AssaultTeam ^ 1]);
-	dbg_msg("fluffy", "m_AssaultOverTick: %d", m_AssaultOverTick);
 
 	if (m_AssaultTeamSpawnDelay > 0)
 	{
 		// we will call StartAssault once the assault team spawns
-		dbg_msg("fluffy", "returned");
 		return;
 	}
 	// else if (m_AssaultTeamSpawnDelay == -1 && m_aCaptureTime[m_AssaultTeam ^ 1] != -1.0f && m_AssaultOverTick != -1)
 	// {
 	// 	// we are about to start the second round and we have to reset the spawn delay timer
 	// 	// m_AssaultTeamSpawnDelay = g_Config.m_SvAssaultTeamSpawnDelay * Server()->TickSpeed();
-	// 	dbg_msg("fluffy", "returned");
 	// 	return;
 	// }
 
@@ -654,7 +644,6 @@ void CGameControllerAssault::Tick()
 			else if (m_AssaultTeamSpawnDelay == 0)
 			{
 				m_AssaultTeamSpawnDelay = -1;
-				dbg_msg("fluffy", "from m_AssaultTeamSpawnDelay");
 				StartAssault(false);
 			}
 		}
@@ -666,7 +655,6 @@ void CGameControllerAssault::Tick()
 				// assault over.. wait for restart
 				if(Server()->Tick() > m_AssaultOverTick)
 				{
-					dbg_msg("fluffy", "from m_AssaultOverTick");
 					StartAssault();
 				}
 				else
@@ -686,7 +674,6 @@ void CGameControllerAssault::Tick()
 	{
 		// I don't like how StartAssault() doesn't get called at the start of the server
 		// so I'm doing it now
-		dbg_msg("fluffy", "from m_AssaultInitialized");
 		StartAssault(false);
 		m_AssaultInitialized = true;
 		// SetAssaultFlags();
