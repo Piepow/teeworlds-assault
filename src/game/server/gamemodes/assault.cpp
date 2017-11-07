@@ -29,9 +29,9 @@ CGameControllerAssault::CGameControllerAssault(class CGameContext *pGameServer)
 	m_AssaultOverTick = -1;
 	m_AssaultStartTick = Server()->Tick();
 	m_FinishedAllAssault = false;
-	if (g_Config.m_SvAssaultTeamSpawnDelay > 0)
+	if (g_Config.m_SvAssaultSpawnDelay > 0)
 	{
-		m_AssaultTeamSpawnDelay = g_Config.m_SvAssaultTeamSpawnDelay * Server()->TickSpeed();
+		m_AssaultTeamSpawnDelay = g_Config.m_SvAssaultSpawnDelay * Server()->TickSpeed();
 	}
 	else
 	{
@@ -168,10 +168,10 @@ bool CGameControllerAssault::CanSpawn(int Team, vec2 *pOutPos)
 	{
 		Eval.m_FriendlyTeam = Team;
 
-		// take m_SvAssaultTeamSpawnAtFlag into consideration
+		// take m_SvAssaultSpawnAtFlag into consideration
 		if (Team == m_AssaultTeam)
 		{
-			switch (g_Config.m_SvAssaultTeamSpawnAtFlag)
+			switch (g_Config.m_SvAssaultSpawnAtFlag)
 			{
 				case 0:
 					// spawn at normal spawns
@@ -327,9 +327,9 @@ void CGameControllerAssault::StartRound()
 			GameServer()->m_apPlayers[i]->m_AssaultCapturedFlagTeam = -1;
 		}
 	}
-	if (g_Config.m_SvAssaultTeamSpawnDelay > 0)
+	if (g_Config.m_SvAssaultSpawnDelay > 0)
 	{
-		m_AssaultTeamSpawnDelay = g_Config.m_SvAssaultTeamSpawnDelay * Server()->TickSpeed();
+		m_AssaultTeamSpawnDelay = g_Config.m_SvAssaultSpawnDelay * Server()->TickSpeed();
 	}
 	else
 	{
@@ -676,9 +676,9 @@ void CGameControllerAssault::EndAssault(bool CapturedFlag)
 	}
 
 	// reset the spawn delay
-	if (g_Config.m_SvAssaultTeamSpawnDelay > 0)
+	if (g_Config.m_SvAssaultSpawnDelay > 0)
 	{
-		m_AssaultTeamSpawnDelay = g_Config.m_SvAssaultTeamSpawnDelay * Server()->TickSpeed();
+		m_AssaultTeamSpawnDelay = g_Config.m_SvAssaultSpawnDelay * Server()->TickSpeed();
 	}
 	else
 	{
@@ -856,7 +856,7 @@ void CGameControllerAssault::Tick()
 			// don't factor assault team spawn delay into time calculation
 			if(m_AssaultTeamSpawnDelay > 0)
 			{
-				if(m_AssaultTeamSpawnDelay == g_Config.m_SvAssaultTeamSpawnDelay * Server()->TickSpeed())
+				if(m_AssaultTeamSpawnDelay == g_Config.m_SvAssaultSpawnDelay * Server()->TickSpeed())
 				{
 					// should trigger only once
 					char aBuf[64];
