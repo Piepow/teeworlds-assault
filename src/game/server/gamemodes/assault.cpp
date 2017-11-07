@@ -173,12 +173,21 @@ bool CGameControllerAssault::CanSpawn(int Team, vec2 *pOutPos)
 			// first try own team spawn, then normal spawn and then enemy, which
 			// depends on what m_AssaultTeam is
 			// look in IGameController::OnEntity() at the cases for spawns
-			EvaluateSpawnType(&Eval, 1 + (!Team ^ m_AssaultTeam));
+
+			// Team -> m_AssaultTeam = SpawnTeam
+			// 0 -> 0 = 1 + 1 = 2
+			// 1 -> 0 = 0 + 1 = 1
+			// 0 -> 1 = 0 + 1 = 1
+			// 1 -> 1 = 1 + 1 = 2
+			dbg_msg("fluffy", "Team: %d", Team);
+			dbg_msg("fluffy", "m_AssaultTeam: %d", m_AssaultTeam);
+			dbg_msg("fluffy", "Eval: %d", !(Team ^ m_AssaultTeam));
+			EvaluateSpawnType(&Eval, 1 + !(Team ^ m_AssaultTeam));
 			if(!Eval.m_Got)
 			{
 				EvaluateSpawnType(&Eval, 0);
 				if(!Eval.m_Got)
-					EvaluateSpawnType(&Eval, 1 + !(!Team ^ m_AssaultTeam));
+					EvaluateSpawnType(&Eval, 1 + (Team ^ m_AssaultTeam));
 			}
 		}
 		else
