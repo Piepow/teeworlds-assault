@@ -7,6 +7,7 @@
 
 #include <game/server/entities/character.h>
 #include <game/server/entities/flag.h>
+#include <game/server/entities/base-flag-decor.h>
 #include <game/server/player.h>
 #include <game/server/gamecontext.h>
 #include "assault.h"
@@ -313,6 +314,7 @@ void CGameControllerAssault::SetAssaultFlags()
 	if (m_pBaseFlag)
 	{
 		GameServer()->m_World.RemoveEntity(m_pBaseFlag);
+		GameServer()->m_World.RemoveEntity(m_pBaseFlagDecor);
 	}
 	if (m_pAssaultFlag)
 	{
@@ -330,6 +332,9 @@ void CGameControllerAssault::SetAssaultFlags()
 		m_pBaseFlag->m_StandPos = m_aFlagPositions[TEAM_RED];
 		m_pBaseFlag->m_Pos = m_aFlagPositions[TEAM_RED];
 		GameServer()->m_World.InsertEntity(m_pBaseFlag);
+
+		// make marking around BaseFlag
+		m_pBaseFlagDecor = new CBaseFlagDecor(&GameServer()->m_World, m_pBaseFlag);
 	}
 	if (m_aFlagPositions[m_AssaultTeam ^ 1])
 	{
@@ -442,15 +447,19 @@ void CGameControllerAssault::EndAssault(bool CapturedFlag)
 			}
 
 			// kill everybody on the defending team
-			for(CCharacter *p = (CCharacter*) GameServer()->m_World.FindFirst(CGameWorld::ENTTYPE_CHARACTER); p; p = (CCharacter *)p->TypeNext())
+			for (int i = 0; i < MAX_CLIENTS; ++i)
 			{
-				if(p->GetPlayer()->GetTeam() != m_AssaultTeam)
+				if (READYPLAYER(i))
 				{
-					GameServer()->CreateExplosion(p->m_Pos, -1, WEAPON_GAME, true);
-					GameServer()->CreateSound(p->m_Pos, SOUND_GRENADE_EXPLODE);
-					if(m_pAssaultFlag->m_pCarryingCharacter)
+					CCharacter *p = GameServer()->m_apPlayers[i]->GetCharacter();
+					if (p->GetPlayer()->GetTeam() != m_AssaultTeam)
 					{
-						p->Die(m_pAssaultFlag->m_pCarryingCharacter->GetPlayer()->GetCID(), WEAPON_NINJA);
+						GameServer()->CreateExplosion(p->m_Pos, -1, WEAPON_GAME, true);
+						GameServer()->CreateSound(p->m_Pos, SOUND_GRENADE_EXPLODE);
+						if(m_pAssaultFlag->m_pCarryingCharacter)
+						{
+							p->Die(m_pAssaultFlag->m_pCarryingCharacter->GetPlayer()->GetCID(), WEAPON_NINJA);
+						}
 					}
 				}
 			}
@@ -462,6 +471,7 @@ void CGameControllerAssault::EndAssault(bool CapturedFlag)
 			if (m_pBaseFlag)
 			{
 				GameServer()->m_World.RemoveEntity(m_pBaseFlag);
+				GameServer()->m_World.RemoveEntity(m_pBaseFlagDecor);
 			}
 			if (m_pAssaultFlag)
 			{
