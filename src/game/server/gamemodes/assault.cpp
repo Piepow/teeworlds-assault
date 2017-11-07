@@ -1,9 +1,6 @@
 /* (c) Magnus Auvinen. See licence.txt in the root of the distribution for more information. */
 /* If you are missing that file, acquire a complete release at teeworlds.com.                */
 
-// TODO: Remove this
-#include <iostream>
-
 #include <engine/shared/config.h>
 
 #include <game/mapitems.h>
@@ -245,7 +242,8 @@ bool CGameControllerAssault::CanSpawn(int Team, vec2 *pOutPos)
 
 bool CGameControllerAssault::GetSpawnFromClump(vec2 CenterPos, vec2 *pOutPos, float Radius)
 {
-	std::cout << Radius << std::endl;
+	// start with a radius, see if points are spawnable on the circle at TestPoints
+	// also use a random starting angle
 	int TestPoints = 8;
 	float StartAngle = 2.0 * pi * frandom();
 	for (int i = 0; i < TestPoints; ++i)
@@ -270,6 +268,7 @@ bool CGameControllerAssault::GetSpawnFromClump(vec2 CenterPos, vec2 *pOutPos, fl
 	}
 	else
 	{
+		// a tee size is 28.0f (character.h)
 		return GetSpawnFromClump(CenterPos, pOutPos, Radius + 14.0f);
 	}
 }
@@ -280,22 +279,23 @@ bool CGameControllerAssault::IsSpawnable(vec2 Pos)
 	// check if there is a tee too close
 	CCharacter *aEnts[MAX_CLIENTS];
 	int Num = GameServer()->m_World.FindEntities(Pos, 64, (CEntity**)aEnts, MAX_CLIENTS, CGameWorld::ENTTYPE_CHARACTER);
-	
 	for (int c = 0; c < Num; ++c)
 	{
+		// with such a long minimum distance, tees will overlap. But that's ok because
+		// they will distribute themselves out after spawning
 		if (distance(aEnts[c]->m_Pos, Pos) <= 2.0f)
 		{
 			return false;
 		}
 	}
 	
-	// check the center
+	// make sure nothing is at the center
 	if (GameServer()->Collision()->CheckPoint(Pos))
 	{
 		return false;
 	}
 	
-	// check the border of the tee. Kind of extreme, but more precise
+	// check the border of the tee. Even if part of a tee overlaps a collision tile, the tee gets stuck
 	for (int i = 0; i < 16; i++)
 	{
 		float Angle = i * (2.0f * pi / 16.0f);
