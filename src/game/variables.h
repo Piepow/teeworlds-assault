@@ -86,7 +86,7 @@ MACRO_CONFIG_INT(SvVoteKickBantime, sv_vote_kick_bantime, 5, 0, 1440, CFGFLAG_SE
 
 MACRO_CONFIG_INT(SvAssaultTimelimit, sv_assault_timelimit, 10, 0, 1000, CFGFLAG_SERVER, "Timelimit for the first assult team to capture the flag in minutes")
 MACRO_CONFIG_INT(SvAssaultSpawnDelay, sv_assault_spawn_delay, 0, 0, 1000, CFGFLAG_SERVER, "Delay in seconds for assault team to spawn")
-MACRO_CONFIG_INT(SvAssaultFlagNinja, sv_assault_flag_ninja, 1, 0, 1, CFGFLAG_SERVER, "Make the holder of the assault flag a ninja")
+MACRO_CONFIG_INT(SvAssaultFlagNinja, sv_assault_flag_ninja, 0, 0, 1, CFGFLAG_SERVER, "Make the holder of the assault flag a ninja")
 MACRO_CONFIG_INT(SvAssaultSpawnAtFlag, sv_assault_spawn_at_flag, 1, 0, 2, CFGFLAG_SERVER, "Make the assault team spawn at the assault flag (0 = spawn at normal spawn points, 1 = spawn at flag at first spawn, 2 = always spawn at flag")
 
 // debug
