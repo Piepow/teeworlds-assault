@@ -310,11 +310,11 @@ void CGameControllerAssault::RemoveAssaultFlags()
 {
 	if (m_pBaseFlag)
 	{
-		GameServer()->m_World.RemoveEntity(m_pBaseFlag);
+		GameServer()->m_World.DestroyEntity(m_pBaseFlag);
 	}
 	if (m_pAssaultFlag)
 	{
-		GameServer()->m_World.RemoveEntity(m_pAssaultFlag);
+		GameServer()->m_World.DestroyEntity(m_pAssaultFlag);
 	}
 	m_pBaseFlag = 0;
 	m_pAssaultFlag = 0;
@@ -891,9 +891,9 @@ void CGameControllerAssault::Tick()
 			// remove ninja from flag holder if necessary
 			if (
 				!g_Config.m_SvAssaultFlagNinja &&
-				m_pAssaultFlag->m_pCarryingCharacter->HasNinja())
+				m_pAssaultFlag->m_pCarryingCharacter->HasNinja(true))
 			{
-				m_pAssaultFlag->m_pCarryingCharacter->RemoveNinja();
+				m_pAssaultFlag->m_pCarryingCharacter->RemoveNinja(true);
 			}
 		}
 		else

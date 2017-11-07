@@ -467,14 +467,28 @@ void CCharacter::GiveNinja(bool Endless)
 	GameServer()->CreateSound(m_Pos, SOUND_PICKUP_NINJA);
 }
 
-void CCharacter::RemoveNinja()
+void CCharacter::RemoveNinja(bool EndlessOnly)
 {
-	m_aWeapons[WEAPON_NINJA].m_Got = false;
+	if (EndlessOnly)
+	{
+		m_Ninja.m_Endless = false;
+	}
+	else
+	{
+		m_aWeapons[WEAPON_NINJA].m_Got = false;
+	}
 }
 
-bool CCharacter::HasNinja()
+bool CCharacter::HasNinja(bool EndlessOnly)
 {
-	return m_aWeapons[WEAPON_NINJA].m_Got;
+	if (EndlessOnly)
+	{
+		return m_Ninja.m_Endless;
+	}
+	else
+	{
+		return m_aWeapons[WEAPON_NINJA].m_Got;
+	}
 }
 
 void CCharacter::SetEmote(int Emote, int Tick)

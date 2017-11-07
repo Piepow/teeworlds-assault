@@ -58,8 +58,8 @@ public:
 
 	bool GiveWeapon(int Weapon, int Ammo);
 	void GiveNinja(bool Endless = false);
-	void RemoveNinja();
-	bool HasNinja();
+	void RemoveNinja(bool EndlessOnly = false);
+	bool HasNinja(bool EndlessOnly = false);
 
 	void SetEmote(int Emote, int Tick);
 
