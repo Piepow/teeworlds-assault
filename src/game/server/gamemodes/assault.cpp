@@ -7,7 +7,6 @@
 
 #include <game/server/entities/character.h>
 #include <game/server/entities/flag.h>
-#include <game/server/entities/base-flag-decor.h>
 #include <game/server/player.h>
 #include <game/server/gamecontext.h>
 #include "assault.h"
@@ -307,19 +306,23 @@ void CGameControllerAssault::EndRound()
 	}
 }
 
-void CGameControllerAssault::SetAssaultFlags()
+void CGameControllerAssault::RemoveAssaultFlags()
 {
-	// remove old flags
-	// possibly redundant? from EndAssault()? well just in case
 	if (m_pBaseFlag)
 	{
 		GameServer()->m_World.RemoveEntity(m_pBaseFlag);
-		GameServer()->m_World.RemoveEntity(m_pBaseFlagDecor);
 	}
 	if (m_pAssaultFlag)
 	{
 		GameServer()->m_World.RemoveEntity(m_pAssaultFlag);
 	}
+	m_pBaseFlag = 0;
+	m_pAssaultFlag = 0;
+}
+
+void CGameControllerAssault::SetAssaultFlags()
+{
+	RemoveAssaultFlags();
 
 	// insert flags
 	if (m_aFlagPositions[m_AssaultTeam])
@@ -328,13 +331,10 @@ void CGameControllerAssault::SetAssaultFlags()
 		{
 			m_pBaseFlag->Reset();
 		}
-		m_pBaseFlag = new CFlag(&GameServer()->m_World, m_AssaultTeam);
+		m_pBaseFlag = new CFlag(&GameServer()->m_World, m_AssaultTeam, true);
 		m_pBaseFlag->m_StandPos = m_aFlagPositions[TEAM_RED];
 		m_pBaseFlag->m_Pos = m_aFlagPositions[TEAM_RED];
 		GameServer()->m_World.InsertEntity(m_pBaseFlag);
-
-		// make marking around BaseFlag
-		m_pBaseFlagDecor = new CBaseFlagDecor(&GameServer()->m_World, m_pBaseFlag);
 	}
 	if (m_aFlagPositions[m_AssaultTeam ^ 1])
 	{
@@ -449,16 +449,16 @@ void CGameControllerAssault::EndAssault(bool CapturedFlag)
 			// kill everybody on the defending team
 			for (int i = 0; i < MAX_CLIENTS; ++i)
 			{
-				if (READYPLAYER(i))
+				if (GameServer()->GetPlayerChar(i))
 				{
-					CCharacter *p = GameServer()->m_apPlayers[i]->GetCharacter();
-					if (p->GetPlayer()->GetTeam() != m_AssaultTeam)
+					CCharacter *pChar = GameServer()->GetPlayerChar(i);
+					if (pChar->GetPlayer()->GetTeam() != m_AssaultTeam)
 					{
-						GameServer()->CreateExplosion(p->m_Pos, -1, WEAPON_GAME, true);
-						GameServer()->CreateSound(p->m_Pos, SOUND_GRENADE_EXPLODE);
+						GameServer()->CreateExplosion(pChar->m_Pos, -1, WEAPON_GAME, true);
+						GameServer()->CreateSound(pChar->m_Pos, SOUND_GRENADE_EXPLODE);
 						if(m_pAssaultFlag->m_pCarryingCharacter)
 						{
-							p->Die(m_pAssaultFlag->m_pCarryingCharacter->GetPlayer()->GetCID(), WEAPON_NINJA);
+							pChar->Die(m_pAssaultFlag->m_pCarryingCharacter->GetPlayer()->GetCID(), WEAPON_NINJA);
 						}
 					}
 				}
@@ -468,15 +468,10 @@ void CGameControllerAssault::EndAssault(bool CapturedFlag)
 			m_pAssaultFlag->m_pCarryingCharacter->GetPlayer()->m_AssaultCapturedFlagTeam = m_AssaultTeam;
 
 			// drop the flags
-			if (m_pBaseFlag)
-			{
-				GameServer()->m_World.RemoveEntity(m_pBaseFlag);
-				GameServer()->m_World.RemoveEntity(m_pBaseFlagDecor);
-			}
-			if (m_pAssaultFlag)
-			{
-				GameServer()->m_World.RemoveEntity(m_pAssaultFlag);
-			}
+			RemoveAssaultFlags();
+
+			// reset entities
+			ResetGame();
 		}
 		else
 		{
@@ -637,40 +632,10 @@ void CGameControllerAssault::Snap(int SnappingClient)
 		}
 		else
 		{
+			pGameDataObj->m_FlagCarrierRed = FLAG_MISSING;
 			pGameDataObj->m_FlagCarrierBlue = FLAG_MISSING;
 		}
 	}
-
-	// if (m_pBaseFlag)
-	// {
-	// 	if(m_pBaseFlag->m_Team == TEAM_RED)
-	// 	{
-	// 		if(m_pBaseFlag->m_AtStand)
-	// 			pGameDataObj->m_FlagCarrierRed = FLAG_ATSTAND;
-	// 		else if(m_pBaseFlag->m_pCarryingCharacter && m_pBaseFlag->m_pCarryingCharacter->GetPlayer())
-	// 			pGameDataObj->m_FlagCarrierRed = m_pBaseFlag->m_pCarryingCharacter->GetPlayer()->GetCID();
-	// 		else
-	// 			pGameDataObj->m_FlagCarrierRed = FLAG_TAKEN;
-
-	// 		pGameDataObj->m_FlagCarrierBlue = FLAG_MISSING;
-	// 	}
-	// 	if(m_pBaseFlag->m_Team == TEAM_BLUE)
-	// 	{
-	// 		if(m_pBaseFlag->m_AtStand)
-	// 			pGameDataObj->m_FlagCarrierBlue = FLAG_ATSTAND;
-	// 		else if(m_pBaseFlag->m_pCarryingCharacter && m_pBaseFlag->m_pCarryingCharacter->GetPlayer())
-	// 			pGameDataObj->m_FlagCarrierBlue = m_pBaseFlag->m_pCarryingCharacter->GetPlayer()->GetCID();
-	// 		else
-	// 			pGameDataObj->m_FlagCarrierBlue = FLAG_TAKEN;
-
-	// 		pGameDataObj->m_FlagCarrierRed = FLAG_MISSING;
-	// 	}
-	// }
-	// else
-	// {
-	// 	pGameDataObj->m_FlagCarrierRed = FLAG_MISSING;
-	// 	pGameDataObj->m_FlagCarrierBlue = FLAG_MISSING;
-	// }
 
 	// at the end of the round, indicate which tees had captured a flag
 	if (m_GameOverTick != -1)

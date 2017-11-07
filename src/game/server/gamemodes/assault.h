@@ -14,7 +14,6 @@ public:
 	// If a player on the AssaultTeam holding the Assault Flag touches the BaseFlag,
 	// the round is over
 	class CFlag *m_pBaseFlag;
-	class CBaseFlagDecor *m_pBaseFlagDecor;
 	// placed at the position of the blue flag entity
 	// Only the assault team can pick up this flag
 	class CFlag *m_pAssaultFlag;
@@ -74,7 +73,7 @@ private:
 	void EndAssault(bool CapturedFlag = false);
 
 	void SetAssaultFlags();
-
+	void RemoveAssaultFlags();
 };
 
 #endif

@@ -10,6 +10,7 @@ class CFlag : public CEntity
 public:
 	static const int ms_PhysSize = 14;
 	CCharacter *m_pCarryingCharacter;
+	class CFlagDecor *m_Decor;
 	vec2 m_Vel;
 	vec2 m_StandPos;
 
@@ -17,11 +18,15 @@ public:
 	int m_AtStand;
 	int m_DropTick;
 	int m_GrabTick;
+	bool m_BaseFlag;
+	int m_InitializeDecor;
 
-	CFlag(CGameWorld *pGameWorld, int Team);
+	CFlag(CGameWorld *pGameWorld, int Team, bool BaseFlag = false);
 
 	virtual void Reset();
 	virtual void TickPaused();
+	virtual void Tick();
+	virtual void Destroy();
 	virtual void Snap(int SnappingClient);
 };
 

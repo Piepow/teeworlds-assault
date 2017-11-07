@@ -4,9 +4,9 @@
 #define GAME_SERVER_ENTITIES_BASE_FLAG_DECOR_H
 
 #include <game/server/entity.h>
-#include <game/server/entities/flag.h>
+#include "flag.h"
 
-class CBaseFlagDecor : public CEntity
+class CFlagDecor : public CEntity
 {
 public:
 	enum
@@ -14,16 +14,18 @@ public:
 		NUM_LASER_DOTS = 20
 	};
 public:
-	CBaseFlagDecor(CGameWorld *pGameWorld, CFlag *pBaseFlag);
-	virtual ~CBaseFlagDecor();
+	CFlagDecor(CGameWorld *pGameWorld, CFlag *pBaseFlag);
+	virtual ~CFlagDecor();
 
 	virtual void Reset();
 	virtual void Snap(int SnappingClient);
 
-	CFlag *m_pBaseFlag;
+	void UpdatePos();
+
+	class CFlag *m_pBaseFlag;
 private:
-	int m_StartTick;
 	int m_aLaserDotIDs[NUM_LASER_DOTS];
+	vec2 FlagPos;
 };
 
 #endif
