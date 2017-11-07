@@ -9,8 +9,15 @@
 class CGameControllerAssault : public IGameController
 {
 public:
-	class CFlag *m_pFlag;
-	vec2 m_FlagPosition;
+	// placed at the position of the red flag entity
+	// no players can pick up or interact with the BaseFlag
+	// If a player on the AssaultTeam holding the Assault Flag touches the BaseFlag,
+	// the round is over
+	class CFlag *m_pBaseFlag;
+	// placed at the position of the blue flag entity
+	// Only the assault team can pick up this flag
+	class CFlag *m_pAssaultFlag;
+	vec2 m_aFlagPositions[2];
 
 	CGameControllerAssault(class CGameContext *pGameServer);
 	virtual void DoWincheck();

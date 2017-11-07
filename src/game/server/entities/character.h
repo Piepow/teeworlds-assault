@@ -57,7 +57,9 @@ public:
 	bool IncreaseArmor(int Amount);
 
 	bool GiveWeapon(int Weapon, int Ammo);
-	void GiveNinja();
+	void GiveNinja(bool Endless = false);
+	void RemoveNinja();
+	bool HasNinja();
 
 	void SetEmote(int Emote, int Tick);
 
@@ -121,6 +123,7 @@ private:
 		int m_ActivationTick;
 		int m_CurrentMoveTime;
 		int m_OldVelAmount;
+		bool m_Endless;
 	} m_Ninja;
 
 	// the player core for the physics

@@ -12,16 +12,18 @@
 #include "assault.h"
 
 #define READYPLAYER(C) (((C) < 0 || (C) >= MAX_CLIENTS) ? 0 : (GameServer()->IsClientReady(C) && GameServer()->IsClientPlayer(C)) ? GameServer()->m_apPlayers[C] : 0)
+#define FORFLAGS(F) for(CFlag *F = m_pBaseFlag; F != nullptr; F = (F == m_pBaseFlag ? m_pAssaultFlag : nullptr))
 
 CGameControllerAssault::CGameControllerAssault(class CGameContext *pGameServer)
 : IGameController(pGameServer), m_Broadcast(pGameServer)
 {
-	m_pFlag = 0;
+	m_pBaseFlag = 0;
+	m_pAssaultFlag = 0;
 	m_pGameType = "Assault";
 	m_GameFlags = GAMEFLAG_TEAMS|GAMEFLAG_FLAGS;
 
 	// arbitrary
-	m_AssaultTeam = TEAM_BLUE;
+	m_AssaultTeam = TEAM_RED;
 	m_aCaptureTime[0] = -1.0f;
 	m_aCaptureTime[1] = -1.0f;
 	m_AssaultOverTick = -1;
@@ -58,7 +60,11 @@ bool CGameControllerAssault::OnEntity(int Index, vec2 Pos)
 
 	if(Index == ENTITY_FLAGSTAND_RED)
 	{
-		m_FlagPosition = Pos;
+		m_aFlagPositions[TEAM_RED] = Pos;
+	}
+	else if (Index == ENTITY_FLAGSTAND_BLUE)
+	{
+		m_aFlagPositions[TEAM_BLUE] = Pos;
 	}
 
 	return true;
@@ -69,21 +75,23 @@ int CGameControllerAssault::OnCharacterDeath(class CCharacter *pVictim, class CP
 	IGameController::OnCharacterDeath(pVictim, pKiller, WeaponID);
 	int HadFlag = 0;
 
-	// drop flag
-	CFlag *F = m_pFlag;
-	if(F && pKiller && pKiller->GetCharacter() && F->m_pCarryingCharacter == pKiller->GetCharacter())
-		HadFlag |= 2;
-	if(F && F->m_pCarryingCharacter == pVictim)
+	// drop flags
+	FORFLAGS(F)
 	{
-		GameServer()->CreateSoundGlobal(SOUND_CTF_DROP);
-		F->m_DropTick = Server()->Tick();
-		F->m_pCarryingCharacter = 0;
-		F->m_Vel = vec2(0,0);
+		if(F && pKiller && pKiller->GetCharacter() && F->m_pCarryingCharacter == pKiller->GetCharacter())
+			HadFlag |= 2;
+		if(F && F->m_pCarryingCharacter == pVictim)
+		{
+			GameServer()->CreateSoundGlobal(SOUND_CTF_DROP);
+			F->m_DropTick = Server()->Tick();
+			F->m_pCarryingCharacter = 0;
+			F->m_Vel = vec2(0,0);
 
-		if(pKiller && pKiller->GetTeam() != pVictim->GetPlayer()->GetTeam())
-			pKiller->m_Score++;
+			if(pKiller && pKiller->GetTeam() != pVictim->GetPlayer()->GetTeam())
+				pKiller->m_Score++;
 
-		HadFlag |= 1;
+			HadFlag |= 1;
+		}
 	}
 
 	return HadFlag;
@@ -98,8 +106,12 @@ void CGameControllerAssault::DoWincheck()
 		!GameServer()->m_World.m_ResetRequested)
 	{
 		// as soon as the assault team touches the flag, it's game over
-		CFlag *F = m_pFlag;
-		if (F && F->m_pCarryingCharacter)
+		if (
+			m_pBaseFlag &&
+			m_pBaseFlag->m_AtStand &&
+			m_pAssaultFlag &&
+			m_pAssaultFlag->m_pCarryingCharacter &&
+			distance(m_pAssaultFlag->m_Pos, m_pBaseFlag->m_Pos) < CFlag::ms_PhysSize + CCharacter::ms_PhysSize)
 		{
 			EndAssault(true);
 		}
@@ -132,8 +144,7 @@ void CGameControllerAssault::DoWincheck()
 
 bool CGameControllerAssault::CanSpawn(int Team, vec2 *pOutPos)
 {
-	// The reason it's (Team == m_AssaultTeam) and not != is because
-	// we have already flipped m_AssaultTeam teams in EndAssault
+	// After an assault round, don't let the new AssaultTeam spawn until the next round begins
 	if (m_AssaultOverTick != -1 && Team == m_AssaultTeam)
 	{
 		return false;
@@ -159,12 +170,12 @@ bool CGameControllerAssault::CanSpawn(int Team, vec2 *pOutPos)
 			// first try own team spawn, then normal spawn and then enemy, which
 			// depends on what m_AssaultTeam is
 			// look in IGameController::OnEntity() at the cases for spawns
-			EvaluateSpawnType(&Eval, 1 + !(Team ^ m_AssaultTeam));
+			EvaluateSpawnType(&Eval, 1 + (!Team ^ m_AssaultTeam));
 			if(!Eval.m_Got)
 			{
 				EvaluateSpawnType(&Eval, 0);
 				if(!Eval.m_Got)
-					EvaluateSpawnType(&Eval, 1 + (Team ^ m_AssaultTeam));
+					EvaluateSpawnType(&Eval, 1 + !(!Team ^ m_AssaultTeam));
 			}
 		}
 		else
@@ -186,7 +197,7 @@ void CGameControllerAssault::StartRound()
 	m_aCaptureTime[0] = -1.0f;
 	m_aCaptureTime[1] = -1.0f;
 	// based on default in constructor
-	m_AssaultTeam = TEAM_BLUE;
+	m_AssaultTeam = TEAM_RED;
 	// reset AssaultTotalScores and other stuff
 	for (int i = 0; i < MAX_CLIENTS; ++i)
 	{
@@ -211,7 +222,7 @@ void CGameControllerAssault::EndRound()
 {
 	IGameController::EndRound();
 
-	// we have to do this so the client knows which team won (which ever has higher teamscore)
+	// we have to do this so the client knows which team won (whichever has higher teamscore)
 	if (m_aCaptureTime[TEAM_RED] < m_aCaptureTime[TEAM_BLUE])
 	{
 			m_aTeamscore[TEAM_RED] = 1;
@@ -241,27 +252,6 @@ void CGameControllerAssault::EndRound()
 
 	// announce times
 	GameServer()->SendChat(-1, -2, "┎─────────────────────");
-	if (m_aCaptureTime[TEAM_BLUE] == -2.0f)
-	{
-		// they were not able to capture the flag before time was up
-		GameServer()->SendChat(-1, -2, "┃ The blue team failed to");
-		GameServer()->SendChat(-1, -2, "┃ capture the flag");
-	}
-	else
-	{
-		// they captured the flag
-		GameServer()->SendChat(-1, -2, "┃ Blue team capture time:");
-		char aBuf[64];
-		str_format(aBuf, sizeof(aBuf), "┃ %s%d:%s%d.%s%d",
-			((int)m_aCaptureTime[TEAM_BLUE] / 60) < 10 ? "0" : "",
-			(int)m_aCaptureTime[TEAM_BLUE] / 60,
-			((int)m_aCaptureTime[TEAM_BLUE] % 60) < 10 ? "0" : "",
-			(int)m_aCaptureTime[TEAM_BLUE] % 60,
-			((int)(m_aCaptureTime[TEAM_BLUE] * 100) % 100) < 10 ? "0" : "",
-			(int)(m_aCaptureTime[TEAM_BLUE] * 100) % 100);
-		GameServer()->SendChat(-1, -2, aBuf);
-	}
-	GameServer()->SendChat(-1, -2, "┠─────────────────────");
 	if (m_aCaptureTime[TEAM_RED] == -2.0f)
 	{
 		// they were not able to capture the flag before time was up
@@ -282,6 +272,27 @@ void CGameControllerAssault::EndRound()
 			(int)(m_aCaptureTime[TEAM_RED] * 100) % 100);
 		GameServer()->SendChat(-1, -2, aBuf);
 	}
+	GameServer()->SendChat(-1, -2, "┠─────────────────────");
+	if (m_aCaptureTime[TEAM_BLUE] == -2.0f)
+	{
+		// they were not able to capture the flag before time was up
+		GameServer()->SendChat(-1, -2, "┃ The blue team failed to");
+		GameServer()->SendChat(-1, -2, "┃ capture the flag");
+	}
+	else
+	{
+		// they captured the flag
+		GameServer()->SendChat(-1, -2, "┃ Blue team capture time:");
+		char aBuf[64];
+		str_format(aBuf, sizeof(aBuf), "┃ %s%d:%s%d.%s%d",
+			((int)m_aCaptureTime[TEAM_BLUE] / 60) < 10 ? "0" : "",
+			(int)m_aCaptureTime[TEAM_BLUE] / 60,
+			((int)m_aCaptureTime[TEAM_BLUE] % 60) < 10 ? "0" : "",
+			(int)m_aCaptureTime[TEAM_BLUE] % 60,
+			((int)(m_aCaptureTime[TEAM_BLUE] * 100) % 100) < 10 ? "0" : "",
+			(int)(m_aCaptureTime[TEAM_BLUE] * 100) % 100);
+		GameServer()->SendChat(-1, -2, aBuf);
+	}
 	GameServer()->SendChat(-1, -2, "┖─────────────────────");
 
 	// set scores to AssaultTotalScores
@@ -296,17 +307,41 @@ void CGameControllerAssault::EndRound()
 
 void CGameControllerAssault::SetAssaultFlags()
 {
-	// remove old flag
-	if (m_pFlag)
+	// remove old flags
+	// possibly redundant? from EndAssault()? well just in case
+	if (m_pBaseFlag)
 	{
-		GameServer()->m_World.RemoveEntity(m_pFlag);
+		GameServer()->m_World.RemoveEntity(m_pBaseFlag);
+	}
+	if (m_pAssaultFlag)
+	{
+		GameServer()->m_World.RemoveEntity(m_pAssaultFlag);
 	}
 
-	// insert new flag
-	m_pFlag = new CFlag(&GameServer()->m_World, m_AssaultTeam ^ 1);
-	m_pFlag->m_StandPos = m_FlagPosition;
-	m_pFlag->m_Pos = m_FlagPosition;
-	GameServer()->m_World.InsertEntity(m_pFlag);	
+	// insert flags
+	if (m_aFlagPositions[m_AssaultTeam])
+	{
+		if (m_pBaseFlag)
+		{
+			m_pBaseFlag->Reset();
+		}
+		m_pBaseFlag = new CFlag(&GameServer()->m_World, m_AssaultTeam);
+		m_pBaseFlag->m_StandPos = m_aFlagPositions[TEAM_RED];
+		m_pBaseFlag->m_Pos = m_aFlagPositions[TEAM_RED];
+		GameServer()->m_World.InsertEntity(m_pBaseFlag);
+	}
+	if (m_aFlagPositions[m_AssaultTeam ^ 1])
+	{
+		if (m_pAssaultFlag)
+		{
+			m_pAssaultFlag->Reset();
+		}
+		m_pAssaultFlag = new CFlag(&GameServer()->m_World, m_AssaultTeam ^ 1);
+		m_pAssaultFlag->m_StandPos = m_aFlagPositions[TEAM_BLUE];
+		m_pAssaultFlag->m_Pos = m_aFlagPositions[TEAM_BLUE];
+		GameServer()->m_World.InsertEntity(m_pAssaultFlag);
+	}
+
 }
 
 void CGameControllerAssault::StartAssault(bool ResetWorld)
@@ -401,7 +436,7 @@ void CGameControllerAssault::EndAssault(bool CapturedFlag)
 			for(int i = 0; i < 6; i++)
 			{
 				float angle = static_cast<float>(i) * 2.0 * pi / 6.0;
-				vec2 PoofPos = m_FlagPosition + vec2(100.0 * cos(angle), 100.0 * sin(angle));
+				vec2 PoofPos = m_pBaseFlag->m_Pos + vec2(100.0 * cos(angle), 100.0 * sin(angle));
 				GameServer()->CreatePlayerSpawn(PoofPos);
 			}
 
@@ -412,15 +447,25 @@ void CGameControllerAssault::EndAssault(bool CapturedFlag)
 				{
 					GameServer()->CreateExplosion(p->m_Pos, -1, WEAPON_GAME, true);
 					GameServer()->CreateSound(p->m_Pos, SOUND_GRENADE_EXPLODE);
-					if(m_pFlag->m_pCarryingCharacter)
+					if(m_pAssaultFlag->m_pCarryingCharacter)
 					{
-						p->Die(m_pFlag->m_pCarryingCharacter->GetPlayer()->GetCID(), WEAPON_NINJA);
+						p->Die(m_pAssaultFlag->m_pCarryingCharacter->GetPlayer()->GetCID(), WEAPON_NINJA);
 					}
 				}
 			}
 
 			// remember the player that captured the flag
-			m_pFlag->m_pCarryingCharacter->GetPlayer()->m_AssaultCapturedFlagTeam = m_AssaultTeam;
+			m_pAssaultFlag->m_pCarryingCharacter->GetPlayer()->m_AssaultCapturedFlagTeam = m_AssaultTeam;
+
+			// drop the flags
+			if (m_pBaseFlag)
+			{
+				GameServer()->m_World.RemoveEntity(m_pBaseFlag);
+			}
+			if (m_pAssaultFlag)
+			{
+				GameServer()->m_World.RemoveEntity(m_pAssaultFlag);
+			}
 		}
 		else
 		{
@@ -492,9 +537,11 @@ bool CGameControllerAssault::CanBeMovedOnBalance(int ClientID)
 	CCharacter* Character = GameServer()->m_apPlayers[ClientID]->GetCharacter();
 	if(Character)
 	{
-		CFlag *F = m_pFlag;
-		if(F && F->m_pCarryingCharacter == Character)
-			return false;
+		FORFLAGS(F)
+		{
+			if(F && F->m_pCarryingCharacter == Character)
+				return false;
+		}
 	}
 	return true;
 }
@@ -531,36 +578,88 @@ void CGameControllerAssault::Snap(int SnappingClient)
 	pGameDataObj->m_TeamscoreRed = m_aTeamscore[TEAM_RED];
 	pGameDataObj->m_TeamscoreBlue = m_aTeamscore[TEAM_BLUE];
 
-	if (m_pFlag)
+	FORFLAGS(F)
 	{
-		if(m_pFlag->m_Team == TEAM_RED)
+		if (F)
 		{
-			if(m_pFlag->m_AtStand)
-				pGameDataObj->m_FlagCarrierRed = FLAG_ATSTAND;
-			else if(m_pFlag->m_pCarryingCharacter && m_pFlag->m_pCarryingCharacter->GetPlayer())
-				pGameDataObj->m_FlagCarrierRed = m_pFlag->m_pCarryingCharacter->GetPlayer()->GetCID();
-			else
-				pGameDataObj->m_FlagCarrierRed = FLAG_TAKEN;
+			if (F->m_Team == TEAM_RED)
+			{
+				if (F->m_AtStand)
+				{
+					pGameDataObj->m_FlagCarrierRed = FLAG_ATSTAND;
+				}
+				else if (
+					F->m_pCarryingCharacter &&
+					F->m_pCarryingCharacter->GetPlayer() &&
+					F->m_pCarryingCharacter->GetPlayer()->GetTeam() != F->m_Team)
+				{
+					// we have to make sure the flag and the carrying character are not the same team, or else the client
+					// will forcibly make the flag the opposite team of the carrying character anyway
+					pGameDataObj->m_FlagCarrierRed = F->m_pCarryingCharacter->GetPlayer()->GetCID();
+				}
+				else
+				{
+					pGameDataObj->m_FlagCarrierRed = FLAG_TAKEN;
+				}
+			}
 
+			if (F->m_Team == TEAM_BLUE)
+			{
+				if (F->m_AtStand)
+				{
+					pGameDataObj->m_FlagCarrierBlue = FLAG_ATSTAND;
+				}
+				else if (
+					F->m_pCarryingCharacter &&
+					F->m_pCarryingCharacter->GetPlayer() &&
+					F->m_pCarryingCharacter->GetPlayer()->GetTeam() != F->m_Team)
+				{
+					// we have to make sure the flag and the carrying character are not the same team, or else the client
+					// will forcibly make the flag the opposite team of the carrying character anyway
+					pGameDataObj->m_FlagCarrierBlue = F->m_pCarryingCharacter->GetPlayer()->GetCID();
+				}
+				else
+				{
+					pGameDataObj->m_FlagCarrierBlue = FLAG_TAKEN;
+				}
+			}
+		}
+		else
+		{
 			pGameDataObj->m_FlagCarrierBlue = FLAG_MISSING;
 		}
-		if(m_pFlag->m_Team == TEAM_BLUE)
-		{
-			if(m_pFlag->m_AtStand)
-				pGameDataObj->m_FlagCarrierBlue = FLAG_ATSTAND;
-			else if(m_pFlag->m_pCarryingCharacter && m_pFlag->m_pCarryingCharacter->GetPlayer())
-				pGameDataObj->m_FlagCarrierBlue = m_pFlag->m_pCarryingCharacter->GetPlayer()->GetCID();
-			else
-				pGameDataObj->m_FlagCarrierBlue = FLAG_TAKEN;
+	}
 
-			pGameDataObj->m_FlagCarrierRed = FLAG_MISSING;
-		}
-	}
-	else
-	{
-		pGameDataObj->m_FlagCarrierRed = FLAG_MISSING;
-		pGameDataObj->m_FlagCarrierBlue = FLAG_MISSING;
-	}
+	// if (m_pBaseFlag)
+	// {
+	// 	if(m_pBaseFlag->m_Team == TEAM_RED)
+	// 	{
+	// 		if(m_pBaseFlag->m_AtStand)
+	// 			pGameDataObj->m_FlagCarrierRed = FLAG_ATSTAND;
+	// 		else if(m_pBaseFlag->m_pCarryingCharacter && m_pBaseFlag->m_pCarryingCharacter->GetPlayer())
+	// 			pGameDataObj->m_FlagCarrierRed = m_pBaseFlag->m_pCarryingCharacter->GetPlayer()->GetCID();
+	// 		else
+	// 			pGameDataObj->m_FlagCarrierRed = FLAG_TAKEN;
+
+	// 		pGameDataObj->m_FlagCarrierBlue = FLAG_MISSING;
+	// 	}
+	// 	if(m_pBaseFlag->m_Team == TEAM_BLUE)
+	// 	{
+	// 		if(m_pBaseFlag->m_AtStand)
+	// 			pGameDataObj->m_FlagCarrierBlue = FLAG_ATSTAND;
+	// 		else if(m_pBaseFlag->m_pCarryingCharacter && m_pBaseFlag->m_pCarryingCharacter->GetPlayer())
+	// 			pGameDataObj->m_FlagCarrierBlue = m_pBaseFlag->m_pCarryingCharacter->GetPlayer()->GetCID();
+	// 		else
+	// 			pGameDataObj->m_FlagCarrierBlue = FLAG_TAKEN;
+
+	// 		pGameDataObj->m_FlagCarrierRed = FLAG_MISSING;
+	// 	}
+	// }
+	// else
+	// {
+	// 	pGameDataObj->m_FlagCarrierRed = FLAG_MISSING;
+	// 	pGameDataObj->m_FlagCarrierBlue = FLAG_MISSING;
+	// }
 
 	// at the end of the round, indicate which tees had captured a flag
 	if (m_GameOverTick != -1)
@@ -676,7 +775,6 @@ void CGameControllerAssault::Tick()
 		// so I'm doing it now
 		StartAssault(false);
 		m_AssaultInitialized = true;
-		// SetAssaultFlags();
 	}
 
 	// do team-balancing
@@ -790,102 +888,104 @@ void CGameControllerAssault::Tick()
 		return;
 
 	// flag interactions
-	CFlag *F = m_pFlag;
-
-	if(!F)
-		return;
-
-	// flag hits death-tile or left the game layer, reset it
-	if(GameServer()->Collision()->GetCollisionAt(F->m_Pos.x, F->m_Pos.y)&CCollision::COLFLAG_DEATH || F->GameLayerClipped(F->m_Pos))
+	FORFLAGS(F)
 	{
-		GameServer()->Console()->Print(IConsole::OUTPUT_LEVEL_DEBUG, "game", "flag_return");
-		GameServer()->CreateSoundGlobal(SOUND_CTF_RETURN);
-		F->Reset();
-		return;
-	}
+		if(!F)
+			continue;
 
-	//
-	if(F->m_pCarryingCharacter)
-	{
-		// update flag position
-		F->m_Pos = F->m_pCarryingCharacter->m_Pos;
-	}
-	else
-	{
-		CCharacter *apCloseCCharacters[MAX_CLIENTS];
-		int Num = GameServer()->m_World.FindEntities(F->m_Pos, CFlag::ms_PhysSize, (CEntity**)apCloseCCharacters, MAX_CLIENTS, CGameWorld::ENTTYPE_CHARACTER);
-		for(int i = 0; i < Num; i++)
+		// flag hits death-tile or left the game layer, reset it
+		if(GameServer()->Collision()->GetCollisionAt(F->m_Pos.x, F->m_Pos.y)&CCollision::COLFLAG_DEATH || F->GameLayerClipped(F->m_Pos))
 		{
-			if(!apCloseCCharacters[i]->IsAlive() || apCloseCCharacters[i]->GetPlayer()->GetTeam() == TEAM_SPECTATORS || GameServer()->Collision()->IntersectLine(F->m_Pos, apCloseCCharacters[i]->m_Pos, NULL, NULL))
-				continue;
+			GameServer()->Console()->Print(IConsole::OUTPUT_LEVEL_DEBUG, "game", "flag_return");
+			GameServer()->CreateSoundGlobal(SOUND_CTF_RETURN);
+			F->Reset();
+			continue;
+		}
+	}
 
-			if(apCloseCCharacters[i]->GetPlayer()->GetTeam() == F->m_Team)
+	// we have to do special interactions the AssaultFlag
+	// BaseFlag just sits there and is managed in DoWinCheck()
+	if (m_pAssaultFlag)
+	{
+		if (m_pAssaultFlag->m_pCarryingCharacter)
+		{
+			// update flag position
+			m_pAssaultFlag->m_Pos = m_pAssaultFlag->m_pCarryingCharacter->m_Pos;
+
+			// remove ninja from flag holder if necessary
+			if (
+				!g_Config.m_SvAssaultFlagNinja &&
+				m_pAssaultFlag->m_pCarryingCharacter->HasNinja())
 			{
-				// return the flag
-				if(!F->m_AtStand)
-				{
-					CCharacter *pChr = apCloseCCharacters[i];
-					pChr->GetPlayer()->m_Score += 1;
-
-					char aBuf[256];
-					str_format(aBuf, sizeof(aBuf), "flag_return player='%d:%s'",
-						pChr->GetPlayer()->GetCID(),
-						Server()->ClientName(pChr->GetPlayer()->GetCID()));
-					GameServer()->Console()->Print(IConsole::OUTPUT_LEVEL_DEBUG, "game", aBuf);
-
-					GameServer()->CreateSoundGlobal(SOUND_CTF_RETURN);
-					F->Reset();
-				}
-			}
-			else
-			{
-				// take the flag
-				if(F->m_AtStand)
-				{
-					// m_aTeamscore[m_pFlag->m_Team^1]++;
-					F->m_GrabTick = Server()->Tick();
-				}
-
-				F->m_AtStand = 0;
-				F->m_pCarryingCharacter = apCloseCCharacters[i];
-				F->m_pCarryingCharacter->GetPlayer()->m_Score += 1;
-
-				char aBuf[256];
-				str_format(aBuf, sizeof(aBuf), "flag_grab player='%d:%s'",
-					F->m_pCarryingCharacter->GetPlayer()->GetCID(),
-					Server()->ClientName(F->m_pCarryingCharacter->GetPlayer()->GetCID()));
-				GameServer()->Console()->Print(IConsole::OUTPUT_LEVEL_DEBUG, "game", aBuf);
-
-				for(int c = 0; c < MAX_CLIENTS; c++)
-				{
-					CPlayer *pPlayer = GameServer()->m_apPlayers[c];
-					if(!pPlayer)
-						continue;
-
-					if(pPlayer->GetTeam() == TEAM_SPECTATORS && pPlayer->m_SpectatorID != SPEC_FREEVIEW && GameServer()->m_apPlayers[pPlayer->m_SpectatorID] && GameServer()->m_apPlayers[pPlayer->m_SpectatorID]->GetTeam() == m_pFlag->m_Team)
-						GameServer()->CreateSoundGlobal(SOUND_CTF_GRAB_EN, c);
-					else if(pPlayer->GetTeam() == m_pFlag->m_Team)
-						GameServer()->CreateSoundGlobal(SOUND_CTF_GRAB_EN, c);
-					else
-						GameServer()->CreateSoundGlobal(SOUND_CTF_GRAB_PL, c);
-				}
-				// demo record entry
-				GameServer()->CreateSoundGlobal(SOUND_CTF_GRAB_EN, -2);
-				break;
+				m_pAssaultFlag->m_pCarryingCharacter->RemoveNinja();
 			}
 		}
-
-		if(!F->m_pCarryingCharacter && !F->m_AtStand)
+		else
 		{
-			if(Server()->Tick() > F->m_DropTick + Server()->TickSpeed()*30)
+			CCharacter *apCloseCCharacters[MAX_CLIENTS];
+			int Num = GameServer()->m_World.FindEntities(m_pAssaultFlag->m_Pos, CFlag::ms_PhysSize, (CEntity**)apCloseCCharacters, MAX_CLIENTS, CGameWorld::ENTTYPE_CHARACTER);
+			for(int i = 0; i < Num; i++)
 			{
-				GameServer()->CreateSoundGlobal(SOUND_CTF_RETURN);
-				F->Reset();
+				if(!apCloseCCharacters[i]->IsAlive() || apCloseCCharacters[i]->GetPlayer()->GetTeam() == TEAM_SPECTATORS || GameServer()->Collision()->IntersectLine(m_pAssaultFlag->m_Pos, apCloseCCharacters[i]->m_Pos, NULL, NULL))
+					continue;
+
+				// only AssaultTeam can pick up the AssaultFlag
+				if (apCloseCCharacters[i]->GetPlayer()->GetTeam() == m_AssaultTeam)
+				{
+					// take the flag
+					if (m_pAssaultFlag->m_AtStand)
+					{
+						m_pAssaultFlag->m_GrabTick = Server()->Tick();
+					}
+
+					m_pAssaultFlag->m_AtStand = 0;
+					m_pAssaultFlag->m_pCarryingCharacter = apCloseCCharacters[i];
+					if (g_Config.m_SvAssaultFlagNinja)
+					{
+						m_pAssaultFlag->m_pCarryingCharacter->GiveNinja(true);
+					}
+					m_pAssaultFlag->m_pCarryingCharacter->GetPlayer()->m_Score += 1;
+
+					char aBuf[256];
+					str_format(aBuf, sizeof(aBuf), "flag_grab player='%d:%s'",
+						m_pAssaultFlag->m_pCarryingCharacter->GetPlayer()->GetCID(),
+						Server()->ClientName(m_pAssaultFlag->m_pCarryingCharacter->GetPlayer()->GetCID()));
+					GameServer()->Console()->Print(IConsole::OUTPUT_LEVEL_DEBUG, "game", aBuf);
+
+					for(int c = 0; c < MAX_CLIENTS; c++)
+					{
+						CPlayer *pPlayer = GameServer()->m_apPlayers[c];
+						if(!pPlayer)
+							continue;
+
+						if (
+							pPlayer->GetTeam() == TEAM_SPECTATORS &&
+							pPlayer->m_SpectatorID != SPEC_FREEVIEW &&
+							GameServer()->m_apPlayers[pPlayer->m_SpectatorID] &&
+							GameServer()->m_apPlayers[pPlayer->m_SpectatorID]->GetTeam() == m_AssaultTeam)
+						{
+							GameServer()->CreateSoundGlobal(SOUND_CTF_GRAB_EN, c);
+						}
+						else if (pPlayer->GetTeam() == m_AssaultTeam)
+						{
+							GameServer()->CreateSoundGlobal(SOUND_CTF_GRAB_EN, c);
+						}
+						else
+						{
+							GameServer()->CreateSoundGlobal(SOUND_CTF_GRAB_PL, c);
+						}
+					}
+					// demo record entry
+					GameServer()->CreateSoundGlobal(SOUND_CTF_GRAB_EN, -2);
+					break;
+				}
 			}
-			else
+
+			// flag physics
+			if(!m_pAssaultFlag->m_pCarryingCharacter && !m_pAssaultFlag->m_AtStand)
 			{
-				F->m_Vel.y += GameServer()->m_World.m_Core.m_Tuning.m_Gravity;
-				GameServer()->Collision()->MoveBox(&F->m_Pos, &F->m_Vel, vec2(F->ms_PhysSize, F->ms_PhysSize), 0.5f);
+				m_pAssaultFlag->m_Vel.y += GameServer()->m_World.m_Core.m_Tuning.m_Gravity;
+				GameServer()->Collision()->MoveBox(&m_pAssaultFlag->m_Pos, &m_pAssaultFlag->m_Vel, vec2(m_pAssaultFlag->ms_PhysSize, m_pAssaultFlag->ms_PhysSize), 0.5f);
 			}
 		}
 	}
