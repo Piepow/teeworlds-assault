@@ -4,7 +4,6 @@
 #define GAME_SERVER_GAMEMODES_ASSAULT_H
 #include <game/server/gamecontroller.h>
 #include <game/server/entity.h>
-#include <game/server/broadcaster.h>
 
 class CGameControllerAssault : public IGameController
 {
@@ -63,8 +62,6 @@ private:
 
 	// give defense time to prepare
 	int m_AssaultTeamSpawnDelay;
-
-	CBroadcaster m_Broadcast;
 
 	virtual void PostReset();
 

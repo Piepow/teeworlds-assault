@@ -17,7 +17,7 @@
 #define FORFLAGS(F) for(CFlag *F = m_pBaseFlag; F != nullptr; F = (F == m_pBaseFlag ? m_pAssaultFlag : nullptr))
 
 CGameControllerAssault::CGameControllerAssault(class CGameContext *pGameServer)
-: IGameController(pGameServer), m_Broadcast(pGameServer)
+: IGameController(pGameServer)
 {
 	m_pBaseFlag = 0;
 	m_pAssaultFlag = 0;
@@ -52,7 +52,7 @@ void CGameControllerAssault::PostReset()
 
 void CGameControllerAssault::Reset()
 {
-	m_Broadcast.Reset();
+	//
 }
 
 bool CGameControllerAssault::OnEntity(int Index, vec2 Pos)
@@ -399,11 +399,29 @@ void CGameControllerAssault::StartAssault(bool ResetWorld)
 			GameServer()->SendChat(-1, m_AssaultTeam, "┃ Round 2: Attack");
 			GameServer()->SendChat(-1, m_AssaultTeam, "┖─────────────────────");
 			GameServer()->SendChat(-1, m_AssaultTeam, "‣ Capture the flag before time is up");
+			for (int i = 0; i < MAX_CLIENTS; ++i)
+			{
+				if (READYPLAYER(i) && READYPLAYER(i)->GetTeam() == m_AssaultTeam)
+				{
+					char aBuf[64];
+					str_format(aBuf, sizeof aBuf, "Round 2: Attack");
+					GameServer()->SendBroadcast(aBuf, i);
+				}
+			}
 
 			GameServer()->SendChat(-1, m_AssaultTeam ^ 1, "┎─────────────────────");
 			GameServer()->SendChat(-1, m_AssaultTeam ^ 1, "┃ Round 2: Defend");
 			GameServer()->SendChat(-1, m_AssaultTeam ^ 1, "┖─────────────────────");
 			GameServer()->SendChat(-1, m_AssaultTeam ^ 1, "‣ Defend the flag until time is up");
+			for (int i = 0; i < MAX_CLIENTS; ++i)
+			{
+				if (READYPLAYER(i) && READYPLAYER(i)->GetTeam() == (m_AssaultTeam ^ 1))
+				{
+					char aBuf[64];
+					str_format(aBuf, sizeof aBuf, "Round 2: Defend");
+					GameServer()->SendBroadcast(aBuf, i);
+				}
+			}
 		}
 		else
 		{
@@ -414,12 +432,30 @@ void CGameControllerAssault::StartAssault(bool ResetWorld)
 			GameServer()->SendChat(-1, m_AssaultTeam, "┖─────────────────────");
 			GameServer()->SendChat(-1, m_AssaultTeam, "‣ Capture the flag as fast as you can");
 			GameServer()->SendChat(-1, m_AssaultTeam, "‣ Your capture time determines the time you need to defend in Round 2 ");
+			for (int i = 0; i < MAX_CLIENTS; ++i)
+			{
+				if (READYPLAYER(i) && READYPLAYER(i)->GetTeam() == m_AssaultTeam)
+				{
+					char aBuf[64];
+					str_format(aBuf, sizeof aBuf, "Round 1: Attack");
+					GameServer()->SendBroadcast(aBuf, i);
+				}
+			}
 
 			GameServer()->SendChat(-1, m_AssaultTeam ^ 1, "┎─────────────────────");
 			GameServer()->SendChat(-1, m_AssaultTeam ^ 1, "┃ Round 1: Defend");
 			GameServer()->SendChat(-1, m_AssaultTeam ^ 1, "┖─────────────────────");
 			GameServer()->SendChat(-1, m_AssaultTeam ^ 1, "‣ Defend the flag as long as you can");
 			GameServer()->SendChat(-1, m_AssaultTeam ^ 1, "‣ The time you defend determines your time limit for attack in Round 2");
+			for (int i = 0; i < MAX_CLIENTS; ++i)
+			{
+				if (READYPLAYER(i) && READYPLAYER(i)->GetTeam() == (m_AssaultTeam ^ 1))
+				{
+					char aBuf[64];
+					str_format(aBuf, sizeof aBuf, "Round 1: Defend");
+					GameServer()->SendBroadcast(aBuf, i);
+				}
+			}
 		}
 	}
 
@@ -737,13 +773,6 @@ void CGameControllerAssault::Tick()
 				{
 					StartAssault();
 				}
-				else
-				{
-					char aBuf[64];
-					str_format(aBuf, sizeof aBuf, "Switching teams in %d seconds",
-						5 - ((Server()->Tick() - m_AssaultOverTick) / Server()->TickSpeed()));
-					m_Broadcast.Update(-1, aBuf, 1);
-				}
 			}
 		}
 	}
@@ -968,6 +997,4 @@ void CGameControllerAssault::DoBroadcasts()
 {
 	if (m_GameOverTick != -1)
 		return;
-
-	m_Broadcast.Operate();
 }

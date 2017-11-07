@@ -50,7 +50,7 @@ void CBroadcaster::Update(int Cid, const char *pText, int Lifespan)
 	if (Changed)
 	{
 		str_copy(m_aBroadcast[Cid], pText, sizeof m_aBroadcast[Cid]);
-		m_Changed |= (1<<Cid);
+		m_Changed |= (1 << Cid);
 	}
 }
 
@@ -61,10 +61,10 @@ void CBroadcaster::Reset()
 		m_aBroadcast[i][0] = '\0';
 		m_aNextBroadcast[i] = m_aBroadcastStop[i] = -1;
 		m_Changed = ~0;
-		if (READYPLAYER(i))
-		{
-			GS->SendBroadcast("", i);
-		}
+		// if (READYPLAYER(i))
+		// {
+		// 	GS->SendBroadcast(" ", i);
+		// }
 	}
 	m_aDefBroadcast[0] = '\0';
 }
