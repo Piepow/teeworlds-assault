@@ -49,6 +49,9 @@ private:
 	// I am calling StartAssault() once at the first tick
 	bool m_AssaultInitialized;
 
+	// on the first spawn, the assault team spawns new the flag
+	int m_FirstAssaultSpawnTick;
+
 	// times required to capture the flag for both teams
 	// team with lowest capture time wins
 	// if it's -1, it means that team hasn't had an assault round or currently is in one,
@@ -73,6 +76,9 @@ private:
 
 	void SetAssaultFlags();
 	void RemoveAssaultFlags();
+
+	bool GetSpawnFromClump(vec2 CenterPos, vec2 *pOutPos, float Radius = 32.0f);
+	bool IsSpawnable(vec2 Pos);
 };
 
 #endif

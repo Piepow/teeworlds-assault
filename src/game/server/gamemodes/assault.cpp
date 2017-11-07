@@ -1,6 +1,7 @@
 /* (c) Magnus Auvinen. See licence.txt in the root of the distribution for more information. */
 /* If you are missing that file, acquire a complete release at teeworlds.com.                */
 
+// TODO: Remove this
 #include <iostream>
 
 #include <engine/shared/config.h>
@@ -40,6 +41,7 @@ CGameControllerAssault::CGameControllerAssault(class CGameContext *pGameServer)
 		m_AssaultTeamSpawnDelay = -1;
 	}
 	m_AssaultInitialized = false;
+	m_FirstAssaultSpawnTick = -1;
 
 	Reset();
 }
@@ -158,48 +160,154 @@ bool CGameControllerAssault::CanSpawn(int Team, vec2 *pOutPos)
 		// give defense time to prepare
 		return false;
 	}
-	else
+
+	CSpawnEval Eval;
+
+	// spectators can't spawn
+	if(Team == TEAM_SPECTATORS)
+		return false;
+
+	if(IsTeamplay())
 	{
-		CSpawnEval Eval;
+		Eval.m_FriendlyTeam = Team;
 
-		// spectators can't spawn
-		if(Team == TEAM_SPECTATORS)
-			return false;
-
-		if(IsTeamplay())
+		// take m_SvAssaultTeamSpawnAtFlag into consideration
+		if (Team == m_AssaultTeam)
 		{
-			Eval.m_FriendlyTeam = Team;
-
-			// first try own team spawn, then normal spawn and then enemy, which
-			// depends on what m_AssaultTeam is
-			// look in IGameController::OnEntity() at the cases for spawns
-
-			// Team -> m_AssaultTeam = SpawnTeam
-			// 0 -> 0 = 1 + 1 = 2
-			// 1 -> 0 = 0 + 1 = 1
-			// 0 -> 1 = 0 + 1 = 1
-			// 1 -> 1 = 1 + 1 = 2
-			dbg_msg("fluffy", "Team: %d", Team);
-			dbg_msg("fluffy", "m_AssaultTeam: %d", m_AssaultTeam);
-			dbg_msg("fluffy", "Eval: %d", !(Team ^ m_AssaultTeam));
-			EvaluateSpawnType(&Eval, 1 + !(Team ^ m_AssaultTeam));
-			if(!Eval.m_Got)
+			switch (g_Config.m_SvAssaultTeamSpawnAtFlag)
 			{
-				EvaluateSpawnType(&Eval, 0);
-				if(!Eval.m_Got)
-					EvaluateSpawnType(&Eval, 1 + (Team ^ m_AssaultTeam));
+				case 0:
+					// spawn at normal spawns
+					break;
+				case 1:
+					// only spawn at flag for the first spawn
+					if (
+						m_FirstAssaultSpawnTick == -1 ||
+						Server()->Tick() == m_FirstAssaultSpawnTick)
+					{
+						// here just continue to case 2
+					}
+					else
+					{
+						break;
+					}
+				case 2:
+					// spawn at the flag
+					dbg_msg("fluffy", "Trying spawn at flag");
+					if (m_pAssaultFlag)
+					{
+						if (GetSpawnFromClump(m_pAssaultFlag->m_Pos, pOutPos))
+						{
+							return true;
+						}
+						else
+						{
+							// could not find a goddamn spawn point near the flag so spawn
+							// at a normal spawn point
+							break;
+						}
+					}
+					else
+					{
+						// m_pAssaultFlag does not exist (yet), so don't let the players spawn until it does
+						return false;
+					}
 			}
 		}
-		else
+
+		// first try own team spawn, then normal spawn and then enemy, which
+		// depends on what m_AssaultTeam is
+		// look in IGameController::OnEntity() at the cases for spawns
+
+		// Team -> m_AssaultTeam = SpawnTeam
+		// 0 -> 0 = 1 + 1 = 2
+		// 1 -> 0 = 0 + 1 = 1
+		// 0 -> 1 = 0 + 1 = 1
+		// 1 -> 1 = 1 + 1 = 2
+		EvaluateSpawnType(&Eval, 1 + !(Team ^ m_AssaultTeam));
+		if(!Eval.m_Got)
 		{
 			EvaluateSpawnType(&Eval, 0);
-			EvaluateSpawnType(&Eval, 1);
-			EvaluateSpawnType(&Eval, 2);
+			if(!Eval.m_Got)
+				EvaluateSpawnType(&Eval, 1 + (Team ^ m_AssaultTeam));
 		}
-
-		*pOutPos = Eval.m_Pos;
-		return Eval.m_Got;
 	}
+	else
+	{
+		EvaluateSpawnType(&Eval, 0);
+		EvaluateSpawnType(&Eval, 1);
+		EvaluateSpawnType(&Eval, 2);
+	}
+
+	*pOutPos = Eval.m_Pos;
+	return Eval.m_Got;
+}
+
+bool CGameControllerAssault::GetSpawnFromClump(vec2 CenterPos, vec2 *pOutPos, float Radius)
+{
+	std::cout << Radius << std::endl;
+	int TestPoints = 8;
+	float StartAngle = 2.0 * pi * frandom();
+	for (int i = 0; i < TestPoints; ++i)
+	{
+		float TestAngle = (static_cast<float>(i) * 2.0 * pi / TestPoints) + StartAngle;
+		vec2 TestSpawnPos = CenterPos + vec2(Radius * cos(TestAngle), Radius * sin(TestAngle));
+		
+		if (IsSpawnable(TestSpawnPos))
+		{
+			dbg_msg("fluffy", "Will spawn at flag");
+			*pOutPos = TestSpawnPos;
+			m_FirstAssaultSpawnTick = Server()->Tick();
+			return true;
+		}
+	}
+
+	// couldn't find a point, try again with larger radius
+	if (Radius > 112.0f)
+	{
+		// give up
+		return false;
+	}
+	else
+	{
+		return GetSpawnFromClump(CenterPos, pOutPos, Radius + 14.0f);
+	}
+}
+
+// borrowed from infClass code
+bool CGameControllerAssault::IsSpawnable(vec2 Pos)
+{
+	// check if there is a tee too close
+	CCharacter *aEnts[MAX_CLIENTS];
+	int Num = GameServer()->m_World.FindEntities(Pos, 64, (CEntity**)aEnts, MAX_CLIENTS, CGameWorld::ENTTYPE_CHARACTER);
+	
+	for (int c = 0; c < Num; ++c)
+	{
+		if (distance(aEnts[c]->m_Pos, Pos) <= 2.0f)
+		{
+			return false;
+		}
+	}
+	
+	// check the center
+	if (GameServer()->Collision()->CheckPoint(Pos))
+	{
+		return false;
+	}
+	
+	// check the border of the tee. Kind of extreme, but more precise
+	for (int i = 0; i < 16; i++)
+	{
+		float Angle = i * (2.0f * pi / 16.0f);
+		vec2 CheckPos = Pos + vec2(cos(Angle), sin(Angle)) * 28.0f;
+		if (GameServer()->Collision()->CheckPoint(CheckPos))
+		{
+			return false;
+		}
+	}
+	
+	return true;
+
 }
 
 void CGameControllerAssault::StartRound()
@@ -369,12 +477,8 @@ void CGameControllerAssault::StartAssault(bool ResetWorld)
 		// we will call StartAssault once the assault team spawns
 		return;
 	}
-	// else if (m_AssaultTeamSpawnDelay == -1 && m_aCaptureTime[m_AssaultTeam ^ 1] != -1.0f && m_AssaultOverTick != -1)
-	// {
-	// 	// we are about to start the second round and we have to reset the spawn delay timer
-	// 	// m_AssaultTeamSpawnDelay = g_Config.m_SvAssaultTeamSpawnDelay * Server()->TickSpeed();
-	// 	return;
-	// }
+
+	m_FirstAssaultSpawnTick = -1;
 
 	if (ResetWorld)
 	{
