@@ -113,6 +113,7 @@ void CGameControllerAssault::DoWincheck()
 			m_pAssaultFlag->m_pCarryingCharacter &&
 			distance(m_pAssaultFlag->m_Pos, m_pBaseFlag->m_Pos) < CFlag::ms_PhysSize + CCharacter::ms_PhysSize)
 		{
+			GameServer()->CreateSoundGlobal(SOUND_CTF_CAPTURE);
 			EndAssault(true);
 		}
 		else
