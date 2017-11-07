@@ -1,6 +1,8 @@
 /* (c) Magnus Auvinen. See licence.txt in the root of the distribution for more information. */
 /* If you are missing that file, acquire a complete release at teeworlds.com.                */
 
+#include <iostream>
+
 #include <engine/shared/config.h>
 
 #include <game/mapitems.h>
@@ -584,58 +586,13 @@ void CGameControllerAssault::Snap(int SnappingClient)
 	pGameDataObj->m_TeamscoreRed = m_aTeamscore[TEAM_RED];
 	pGameDataObj->m_TeamscoreBlue = m_aTeamscore[TEAM_BLUE];
 
-	FORFLAGS(F)
-	{
-		if (F)
-		{
-			if (F->m_Team == TEAM_RED)
-			{
-				if (F->m_AtStand)
-				{
-					pGameDataObj->m_FlagCarrierRed = FLAG_ATSTAND;
-				}
-				else if (
-					F->m_pCarryingCharacter &&
-					F->m_pCarryingCharacter->GetPlayer() &&
-					F->m_pCarryingCharacter->GetPlayer()->GetTeam() != F->m_Team)
-				{
-					// we have to make sure the flag and the carrying character are not the same team, or else the client
-					// will forcibly make the flag the opposite team of the carrying character anyway
-					pGameDataObj->m_FlagCarrierRed = F->m_pCarryingCharacter->GetPlayer()->GetCID();
-				}
-				else
-				{
-					pGameDataObj->m_FlagCarrierRed = FLAG_TAKEN;
-				}
-			}
+	// by default, make them missing
+	pGameDataObj->m_FlagCarrierRed = FLAG_MISSING;
+	pGameDataObj->m_FlagCarrierBlue = FLAG_MISSING;
 
-			if (F->m_Team == TEAM_BLUE)
-			{
-				if (F->m_AtStand)
-				{
-					pGameDataObj->m_FlagCarrierBlue = FLAG_ATSTAND;
-				}
-				else if (
-					F->m_pCarryingCharacter &&
-					F->m_pCarryingCharacter->GetPlayer() &&
-					F->m_pCarryingCharacter->GetPlayer()->GetTeam() != F->m_Team)
-				{
-					// we have to make sure the flag and the carrying character are not the same team, or else the client
-					// will forcibly make the flag the opposite team of the carrying character anyway
-					pGameDataObj->m_FlagCarrierBlue = F->m_pCarryingCharacter->GetPlayer()->GetCID();
-				}
-				else
-				{
-					pGameDataObj->m_FlagCarrierBlue = FLAG_TAKEN;
-				}
-			}
-		}
-		else
-		{
-			pGameDataObj->m_FlagCarrierRed = FLAG_MISSING;
-			pGameDataObj->m_FlagCarrierBlue = FLAG_MISSING;
-		}
-	}
+	// FORFLAGS will not work as we want here, so we will do it manually
+	SnapFlag(pGameDataObj, m_pBaseFlag);
+	SnapFlag(pGameDataObj, m_pAssaultFlag);
 
 	// at the end of the round, indicate which tees had captured a flag
 	if (m_GameOverTick != -1)
@@ -653,6 +610,54 @@ void CGameControllerAssault::Snap(int SnappingClient)
 						pGameDataObj->m_FlagCarrierRed = GameServer()->m_apPlayers[i]->GetCID();
 						break;	
 				}
+			}
+		}
+	}
+}
+
+void CGameControllerAssault::SnapFlag(CNetObj_GameData *pGameDataObj, CFlag* pFlag)
+{
+	if (pFlag)
+	{
+		if (pFlag->m_Team == TEAM_RED)
+		{
+			if (pFlag->m_AtStand)
+			{
+				pGameDataObj->m_FlagCarrierRed = FLAG_ATSTAND;
+			}
+			else if (
+				pFlag->m_pCarryingCharacter &&
+				pFlag->m_pCarryingCharacter->GetPlayer() &&
+				pFlag->m_pCarryingCharacter->GetPlayer()->GetTeam() != pFlag->m_Team)
+			{
+				// we have to make sure the flag and the carrying character are not the same team, or else the client
+				// will forcibly make the flag the opposite team of the carrying character anyway
+				pGameDataObj->m_FlagCarrierRed = pFlag->m_pCarryingCharacter->GetPlayer()->GetCID();
+			}
+			else
+			{
+				pGameDataObj->m_FlagCarrierRed = FLAG_TAKEN;
+			}
+		}
+
+		if (pFlag->m_Team == TEAM_BLUE)
+		{
+			if (pFlag->m_AtStand)
+			{
+				pGameDataObj->m_FlagCarrierBlue = FLAG_ATSTAND;
+			}
+			else if (
+				pFlag->m_pCarryingCharacter &&
+				pFlag->m_pCarryingCharacter->GetPlayer() &&
+				pFlag->m_pCarryingCharacter->GetPlayer()->GetTeam() != pFlag->m_Team)
+			{
+				// we have to make sure the flag and the carrying character are not the same team, or else the client
+				// will forcibly make the flag the opposite team of the carrying character anyway
+				pGameDataObj->m_FlagCarrierBlue = pFlag->m_pCarryingCharacter->GetPlayer()->GetCID();
+			}
+			else
+			{
+				pGameDataObj->m_FlagCarrierBlue = FLAG_TAKEN;
 			}
 		}
 	}
@@ -887,14 +892,6 @@ void CGameControllerAssault::Tick()
 		{
 			// update flag position
 			m_pAssaultFlag->m_Pos = m_pAssaultFlag->m_pCarryingCharacter->m_Pos;
-
-			// remove ninja from flag holder if necessary
-			if (
-				!g_Config.m_SvAssaultFlagNinja &&
-				m_pAssaultFlag->m_pCarryingCharacter->HasNinja(true))
-			{
-				m_pAssaultFlag->m_pCarryingCharacter->RemoveNinja(true);
-			}
 		}
 		else
 		{

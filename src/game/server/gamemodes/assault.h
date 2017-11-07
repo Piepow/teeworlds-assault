@@ -31,6 +31,8 @@ public:
 
 	void Reset();
 
+	void SnapFlag(CNetObj_GameData *pGameDataObj, CFlag *pFlag);
+
 	virtual bool OnEntity(int Index, vec2 Pos);
 	virtual int OnCharacterDeath(class CCharacter *pVictim, class CPlayer *pKiller, int Weapon);
 private:
