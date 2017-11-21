@@ -39,19 +39,30 @@ CGameControllerAssault::CGameControllerAssault(class CGameContext *pGameServer)
 	}
 	m_AssaultInitialized = false;
 	m_FirstAssaultSpawnTick = -1;
-
-	Reset();
 }
 
 void CGameControllerAssault::PostReset()
 {
-	IGameController::PostReset();
-	Reset();
-}
-
-void CGameControllerAssault::Reset()
-{
-	//
+	for( int i = 0; i < MAX_CLIENTS; i++)
+	{
+		if (GameServer()->m_apPlayers[i])
+		{
+			GameServer()->m_apPlayers[i]->Respawn();
+			GameServer()->m_apPlayers[i]->m_Score = 0;
+			GameServer()->m_apPlayers[i]->m_ScoreStartTick = Server()->Tick();
+			// if it's not the second round, do the normal spawn delay
+			// otherwise, don't delay it at all
+			// the reason we do this is to prevent the scoreboard from appearing between assault rounds
+			if ((m_aCaptureTime[m_AssaultTeam ^ 1] != -1.0f))
+			{
+				GameServer()->m_apPlayers[i]->m_RespawnTick = Server()->Tick() + Server()->TickSpeed() * g_Config.m_SvAssaultRoundDelay;
+			}
+			else
+			{
+				GameServer()->m_apPlayers[i]->m_RespawnTick = Server()->Tick() + Server()->TickSpeed() / 2;
+			}
+		}
+	}
 }
 
 bool CGameControllerAssault::OnEntity(int Index, vec2 Pos)
@@ -180,17 +191,18 @@ bool CGameControllerAssault::CanSpawn(int Team, vec2 *pOutPos)
 					// only spawn at flag for the first spawn
 					if (
 						m_FirstAssaultSpawnTick == -1 ||
-						Server()->Tick() == m_FirstAssaultSpawnTick)
+						Server()->Tick() <= m_FirstAssaultSpawnTick)
 					{
 						// here just continue to case 2
 					}
 					else
 					{
+						// we are past the first spawn, so set it to -2 so that doesn't trigger again
+						m_FirstAssaultSpawnTick = -2;
 						break;
 					}
 				case 2:
 					// spawn at the flag
-					dbg_msg("fluffy", "Trying spawn at flag");
 					if (m_pAssaultFlag)
 					{
 						if (GetSpawnFromClump(m_pAssaultFlag->m_Pos, pOutPos))
@@ -253,9 +265,12 @@ bool CGameControllerAssault::GetSpawnFromClump(vec2 CenterPos, vec2 *pOutPos, fl
 		
 		if (IsSpawnable(TestSpawnPos))
 		{
-			dbg_msg("fluffy", "Will spawn at flag");
 			*pOutPos = TestSpawnPos;
-			m_FirstAssaultSpawnTick = Server()->Tick();
+			// record the tick of the first person who spawned
+			if (m_FirstAssaultSpawnTick == -1) {
+				// give 3 ticks of padding
+				m_FirstAssaultSpawnTick = Server()->Tick() + 3;
+			}
 			return true;
 		}
 	}
@@ -535,6 +550,12 @@ void CGameControllerAssault::StartAssault(bool ResetWorld)
 					GameServer()->SendBroadcast(aBuf, i);
 				}
 			}
+
+			// instead of waiting for the everybody to spawn before starting the timer, we will just compensate for the delay
+			// not very clean unfortunately :/
+			m_AssaultStartTick += Server()->TickSpeed() * g_Config.m_SvAssaultRoundDelay;
+			// I guess it's not so absolute after all. Wish there was a better way. Oh well
+			m_AssaultAbsoluteStartTick += Server()->TickSpeed() * g_Config.m_SvAssaultRoundDelay;
 		}
 		else
 		{
@@ -579,6 +600,10 @@ void CGameControllerAssault::StartAssault(bool ResetWorld)
 
 void CGameControllerAssault::EndAssault(bool CapturedFlag)
 {
+	std::cout << m_aCaptureTime[m_AssaultTeam] << std::endl;
+	std::cout << m_aCaptureTime[m_AssaultTeam ^ 1] << std::endl;
+	std::cout << (Server()->Tick() - m_AssaultAbsoluteStartTick) / (float)Server()->TickSpeed() << std::endl;
+
 	if (m_aCaptureTime[m_AssaultTeam] == -1.0f)
 	{
 		// record tick variables
@@ -825,7 +850,7 @@ void CGameControllerAssault::Tick()
 	if(m_GameOverTick != -1)
 	{
 		// game over.. wait for restart
-		if(Server()->Tick() > m_GameOverTick+Server()->TickSpeed()*10)
+		if(Server()->Tick() > m_GameOverTick+Server()->TickSpeed() * 10)
 		{
 			CycleMap();
 			StartRound();
@@ -841,10 +866,12 @@ void CGameControllerAssault::Tick()
 	}
 
 	// game is Paused
-	if(GameServer()->m_World.m_Paused)
+	if(GameServer()->m_World.m_ResetRequested || GameServer()->m_World.m_Paused)
 	{
 		++m_RoundStartTick;
 		++m_AssaultStartTick;
+		++m_AssaultAbsoluteStartTick;
+		return;
 	}
 
 	// note: we also check this in DoWinCheck() to see if it's time to EndRound()
@@ -868,6 +895,8 @@ void CGameControllerAssault::Tick()
 				}
 				--m_AssaultTeamSpawnDelay;
 				++m_AssaultStartTick;
+				// no need to increment m_AssaultAbsoluteStartTick because it will be set properly
+				// in StartAssault()
 				++m_RoundStartTick;
 			}
 			else if (m_AssaultTeamSpawnDelay == 0)
@@ -881,7 +910,7 @@ void CGameControllerAssault::Tick()
 			// no spawn delay - we will just handle starting the next asault round based on the m_AssaultOverTick
 			if(m_AssaultOverTick != -1)
 			{
-				// assault over.. wait for restart
+				// assault over, wait for restart
 				if(Server()->Tick() > m_AssaultOverTick)
 				{
 					StartAssault();
@@ -889,7 +918,6 @@ void CGameControllerAssault::Tick()
 			}
 		}
 	}
-
 
 	// call this only on the first tick
 	if(!m_AssaultInitialized && !GameServer()->m_World.m_Paused)
@@ -1003,12 +1031,7 @@ void CGameControllerAssault::Tick()
 		}
 	}
 
-	DoBroadcasts();
-
 	DoWincheck();
-
-	if(GameServer()->m_World.m_ResetRequested || GameServer()->m_World.m_Paused)
-		return;
 
 	// flag interactions
 	FORFLAGS(F)
@@ -1104,10 +1127,4 @@ void CGameControllerAssault::Tick()
 			}
 		}
 	}
-}
-
-void CGameControllerAssault::DoBroadcasts()
-{
-	if (m_GameOverTick != -1)
-		return;
 }

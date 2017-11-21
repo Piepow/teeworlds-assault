@@ -20,15 +20,12 @@ public:
 
 	CGameControllerAssault(class CGameContext *pGameServer);
 	virtual void DoWincheck();
-	void DoBroadcasts();
 	virtual bool CanBeMovedOnBalance(int ClientID);
 	virtual void Snap(int SnappingClient);
 	virtual void Tick();
 
 	virtual bool CanSpawn(int Team, vec2 *pPos);
 	// virtual float EvaluateSpawnPos(CSpawnEval *pEval, vec2 Pos);
-
-	void Reset();
 
 	void SnapFlag(CNetObj_GameData *pGameDataObj, CFlag *pFlag);
 
@@ -49,7 +46,10 @@ private:
 	// I am calling StartAssault() once at the first tick
 	bool m_AssaultInitialized;
 
-	// on the first spawn, the assault team spawns new the flag
+	// on the first spawn, the assault team spawns near the flag
+	// if it's -1, it means the round has started but nobody has spawned yet (waiting
+	// for the first spawn)
+	// if it's -2, it means we are past the first spawn
 	int m_FirstAssaultSpawnTick;
 
 	// times required to capture the flag for both teams
@@ -64,6 +64,7 @@ private:
 	bool m_FinishedAllAssault;
 
 	// give defense time to prepare
+	// -1 means it's disabled
 	int m_AssaultTeamSpawnDelay;
 
 	virtual void PostReset();
