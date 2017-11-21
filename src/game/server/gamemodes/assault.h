@@ -67,6 +67,9 @@ private:
 	// -1 means it's disabled
 	int m_AssaultTeamSpawnDelay;
 
+	// show the scoreboard for this shit time between rounds
+	int m_AssaultRoundDelay;
+
 	virtual void PostReset();
 
 	virtual void StartRound();

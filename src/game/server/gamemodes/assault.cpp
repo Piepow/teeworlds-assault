@@ -29,6 +29,7 @@ CGameControllerAssault::CGameControllerAssault(class CGameContext *pGameServer)
 	m_AssaultOverTick = -1;
 	m_AssaultStartTick = Server()->Tick();
 	m_FinishedAllAssault = false;
+
 	if (g_Config.m_SvAssaultSpawnDelay > 0)
 	{
 		m_AssaultTeamSpawnDelay = g_Config.m_SvAssaultSpawnDelay * Server()->TickSpeed();
@@ -37,6 +38,10 @@ CGameControllerAssault::CGameControllerAssault(class CGameContext *pGameServer)
 	{
 		m_AssaultTeamSpawnDelay = -1;
 	}
+
+	// we set this in EndAssault() only
+	m_AssaultRoundDelay = -1;
+
 	m_AssaultInitialized = false;
 	m_FirstAssaultSpawnTick = -1;
 }
@@ -50,17 +55,6 @@ void CGameControllerAssault::PostReset()
 			GameServer()->m_apPlayers[i]->Respawn();
 			GameServer()->m_apPlayers[i]->m_Score = 0;
 			GameServer()->m_apPlayers[i]->m_ScoreStartTick = Server()->Tick();
-			// if it's not the second round, do the normal spawn delay
-			// otherwise, don't delay it at all
-			// the reason we do this is to prevent the scoreboard from appearing between assault rounds
-			if ((m_aCaptureTime[m_AssaultTeam ^ 1] != -1.0f))
-			{
-				GameServer()->m_apPlayers[i]->m_RespawnTick = Server()->Tick() + Server()->TickSpeed() * g_Config.m_SvAssaultRoundDelay;
-			}
-			else
-			{
-				GameServer()->m_apPlayers[i]->m_RespawnTick = Server()->Tick() + Server()->TickSpeed() / 2;
-			}
 		}
 	}
 }
@@ -159,6 +153,10 @@ bool CGameControllerAssault::CanSpawn(int Team, vec2 *pOutPos)
 {
 	// After an assault round, don't let the new AssaultTeam spawn until the next round begins
 	if (m_AssaultOverTick != -1 && Team == m_AssaultTeam)
+	{
+		return false;
+	}
+	else if (m_AssaultRoundDelay > 0)
 	{
 		return false;
 	}
@@ -350,6 +348,9 @@ void CGameControllerAssault::StartRound()
 	{
 		m_AssaultTeamSpawnDelay = -1;
 	}
+
+	m_AssaultRoundDelay = -1;
+
 	StartAssault(false);
 }
 
@@ -550,12 +551,6 @@ void CGameControllerAssault::StartAssault(bool ResetWorld)
 					GameServer()->SendBroadcast(aBuf, i);
 				}
 			}
-
-			// instead of waiting for the everybody to spawn before starting the timer, we will just compensate for the delay
-			// not very clean unfortunately :/
-			m_AssaultStartTick += Server()->TickSpeed() * g_Config.m_SvAssaultRoundDelay;
-			// I guess it's not so absolute after all. Wish there was a better way. Oh well
-			m_AssaultAbsoluteStartTick += Server()->TickSpeed() * g_Config.m_SvAssaultRoundDelay;
 		}
 		else
 		{
@@ -600,10 +595,6 @@ void CGameControllerAssault::StartAssault(bool ResetWorld)
 
 void CGameControllerAssault::EndAssault(bool CapturedFlag)
 {
-	std::cout << m_aCaptureTime[m_AssaultTeam] << std::endl;
-	std::cout << m_aCaptureTime[m_AssaultTeam ^ 1] << std::endl;
-	std::cout << (Server()->Tick() - m_AssaultAbsoluteStartTick) / (float)Server()->TickSpeed() << std::endl;
-
 	if (m_aCaptureTime[m_AssaultTeam] == -1.0f)
 	{
 		// record tick variables
@@ -710,6 +701,16 @@ void CGameControllerAssault::EndAssault(bool CapturedFlag)
 		m_AssaultTeamSpawnDelay = -1;
 	}
 
+	// offset the between-round delay
+	if (g_Config.m_SvAssaultRoundDelay > 0)
+	{
+		m_AssaultRoundDelay = g_Config.m_SvAssaultRoundDelay * Server()->TickSpeed();
+	}
+	else
+	{
+		m_AssaultRoundDelay = -1;
+	}
+
 	// switch assault teams
 	m_AssaultTeam ^= 1;
 }
@@ -768,12 +769,12 @@ void CGameControllerAssault::Snap(int SnappingClient)
 	SnapFlag(pGameDataObj, m_pBaseFlag);
 	SnapFlag(pGameDataObj, m_pAssaultFlag);
 
-	// at the end of the round, indicate which tees had captured a flag
-	if (m_GameOverTick != -1)
+	// at the end of an assault round, indicate which tees had captured a flag
+	if (m_AssaultOverTick != -1)
 	{
 		for (int i = 0; i < MAX_CLIENTS; ++i)
 		{
-			if (GameServer()->m_apPlayers[i] && GameServer()->m_apPlayers[i]->m_AssaultCapturedFlagTeam)
+			if (GameServer()->m_apPlayers[i] && GameServer()->m_apPlayers[i]->m_AssaultCapturedFlagTeam != -1)
 			{
 				switch (GameServer()->m_apPlayers[i]->m_AssaultCapturedFlagTeam)
 				{
@@ -877,43 +878,60 @@ void CGameControllerAssault::Tick()
 	// note: we also check this in DoWinCheck() to see if it's time to EndRound()
 	if (!m_FinishedAllAssault)
 	{
-		// if m_AssaultTeamSpawnDelay is -1, then it means it's disabled. Ignore it.
-		if (m_AssaultTeamSpawnDelay != -1)
+		// we can't start the next assault round until the RoundDelay is satisfied
+		if (
+			m_aCaptureTime[m_AssaultTeam ^ 1] != -1.0f ||
+			m_AssaultRoundDelay != -1)
 		{
-			// don't factor assault team spawn delay into time calculation
-			if(m_AssaultTeamSpawnDelay > 0)
+			if (m_AssaultRoundDelay > 0)
 			{
-				if(m_AssaultTeamSpawnDelay == g_Config.m_SvAssaultSpawnDelay * Server()->TickSpeed())
-				{
-					// should trigger only once
-					char aBuf[64];
-					str_format(aBuf, sizeof(aBuf), "You will spawn in %d seconds", m_AssaultTeamSpawnDelay / Server()->TickSpeed());
-					GameServer()->SendChat(-1, m_AssaultTeam, aBuf);
-					str_format(aBuf, sizeof(aBuf), "The round will begin in %d seconds", m_AssaultTeamSpawnDelay / Server()->TickSpeed());
-					GameServer()->SendChat(-1, m_AssaultTeam ^ 1, aBuf);
-					m_AssaultStartTick = Server()->Tick();
-				}
-				--m_AssaultTeamSpawnDelay;
+				--m_AssaultRoundDelay;
 				++m_AssaultStartTick;
-				// no need to increment m_AssaultAbsoluteStartTick because it will be set properly
-				// in StartAssault()
 				++m_RoundStartTick;
 			}
-			else if (m_AssaultTeamSpawnDelay == 0)
+			else
 			{
-				m_AssaultTeamSpawnDelay = -1;
-				StartAssault(false);
-			}
-		}
-		else
-		{
-			// no spawn delay - we will just handle starting the next asault round based on the m_AssaultOverTick
-			if(m_AssaultOverTick != -1)
-			{
-				// assault over, wait for restart
-				if(Server()->Tick() > m_AssaultOverTick)
+				m_AssaultRoundDelay = -1;
+
+				// if m_AssaultTeamSpawnDelay is -1, then it means it's disabled. Ignore it.
+				if (m_AssaultTeamSpawnDelay != -1)
 				{
-					StartAssault();
+					// don't factor assault team spawn delay into time calculation
+					if(m_AssaultTeamSpawnDelay > 0)
+					{
+						if(m_AssaultTeamSpawnDelay == g_Config.m_SvAssaultSpawnDelay * Server()->TickSpeed())
+						{
+							// should trigger only once
+							char aBuf[64];
+							str_format(aBuf, sizeof(aBuf), "You will spawn in %d seconds", m_AssaultTeamSpawnDelay / Server()->TickSpeed());
+							GameServer()->SendChat(-1, m_AssaultTeam, aBuf);
+							str_format(aBuf, sizeof(aBuf), "The round will begin in %d seconds", m_AssaultTeamSpawnDelay / Server()->TickSpeed());
+							GameServer()->SendChat(-1, m_AssaultTeam ^ 1, aBuf);
+							m_AssaultStartTick = Server()->Tick();
+						}
+						--m_AssaultTeamSpawnDelay;
+						++m_AssaultStartTick;
+						// no need to increment m_AssaultAbsoluteStartTick because it will be set properly
+						// in StartAssault()
+						++m_RoundStartTick;
+					}
+					else if (m_AssaultTeamSpawnDelay == 0)
+					{
+						m_AssaultTeamSpawnDelay = -1;
+						StartAssault(false);
+					}
+				}
+				else
+				{
+					// no spawn delay - we will just handle starting the next asault round based on the m_AssaultOverTick
+					if(m_AssaultOverTick != -1)
+					{
+						// assault over, wait for restart
+						if(Server()->Tick() > m_AssaultOverTick)
+						{
+							StartAssault();
+						}
+					}
 				}
 			}
 		}
