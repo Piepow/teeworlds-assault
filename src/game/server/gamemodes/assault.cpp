@@ -43,7 +43,10 @@ CGameControllerAssault::CGameControllerAssault(class CGameContext *pGameServer)
 	m_AssaultRoundDelay = -1;
 
 	m_AssaultInitialized = false;
-	m_FirstAssaultSpawnTick = -1;
+	m_SpawnAtFlagTick = -1;
+	m_SpawnedFirstAssaultPlayer = false;
+	m_NthAssaultPlayerToSpawn = 0;
+	m_RandomAssaultTeamToSpawnIndex = -1;
 }
 
 void CGameControllerAssault::PostReset()
@@ -188,21 +191,34 @@ bool CGameControllerAssault::CanSpawn(int Team, vec2 *pOutPos)
 				case 1:
 					// only spawn at flag for the first spawn
 					if (
-						m_FirstAssaultSpawnTick == -1 ||
-						Server()->Tick() <= m_FirstAssaultSpawnTick)
+						m_SpawnAtFlagTick == -1 ||
+						Server()->Tick() <= m_SpawnAtFlagTick)
 					{
 						// here just continue to case 2
 					}
 					else
 					{
 						// we are past the first spawn, so set it to -2 so that doesn't trigger again
-						m_FirstAssaultSpawnTick = -2;
+						m_SpawnAtFlagTick = -2;
 						break;
 					}
 				case 2:
 					// spawn at the flag
 					if (m_pAssaultFlag)
 					{
+						// randomize who gets flag at start
+						++m_NthAssaultPlayerToSpawn;
+						if (!m_SpawnedFirstAssaultPlayer)
+						{
+							dbg_msg("fluffy", "Server()->Tick(): %d", Server()->Tick());
+							if (!NthPlayerCanSpawn())
+							{
+								return false;
+							}
+						}
+						dbg_msg("fluffy", "Server()->Tick(): %d", Server()->Tick());
+
+
 						if (GetSpawnFromClump(m_pAssaultFlag->m_Pos, pOutPos))
 						{
 							return true;
@@ -250,6 +266,49 @@ bool CGameControllerAssault::CanSpawn(int Team, vec2 *pOutPos)
 	return Eval.m_Got;
 }
 
+bool CGameControllerAssault::NthPlayerCanSpawn()
+{
+	if (m_RandomAssaultTeamToSpawnIndex == -1) {
+		// get the assault team
+		int Index = 0;
+		m_AssaultTeamToSpawnSize = 0;
+		for (int ClientID = 0; ClientID < MAX_CLIENTS; ++ClientID)
+		{
+			if (
+				GameServer()->m_apPlayers[ClientID] &&
+				GameServer()->m_apPlayers[ClientID]->GetTeam() == m_AssaultTeam)
+			{
+				m_aAssaultTeamToSpawn[Index] = ClientID;
+				++Index;
+				++m_AssaultTeamToSpawnSize;
+			}
+		}
+
+		// get the random index
+		m_RandomAssaultTeamToSpawnIndex = round_to_int(frandom() * 100) % (m_AssaultTeamToSpawnSize + 1);
+	}
+
+	dbg_msg("fluffy", "m_RandomAssaultTeamToSpawnIndex: %d", m_RandomAssaultTeamToSpawnIndex);
+	dbg_msg("fluffy", "m_aAssaultTeamToSpawn[m_RandomAssaultTeamToSpawnIndex]: %d", m_aAssaultTeamToSpawn[m_RandomAssaultTeamToSpawnIndex]);
+	dbg_msg("fluffy", "m_NthAssaultPlayerToSpawn: %d", m_NthAssaultPlayerToSpawn);
+	dbg_msg("fluffy", "m_SpawnedFirstAssaultPlayer: %d", m_SpawnedFirstAssaultPlayer);
+	dbg_msg("fluffy", "m_AssaultTeamToSpawnSize: %d", m_AssaultTeamToSpawnSize);
+
+	// see if it matches
+	if (m_NthAssaultPlayerToSpawn - 1 == m_RandomAssaultTeamToSpawnIndex)
+	{
+		dbg_msg("fluffy", "FOUND: ---------------");
+		m_SpawnedFirstAssaultPlayer = true;
+		m_RandomAssaultTeamToSpawnIndex = -1;
+		return true;
+	}
+	else
+	{
+		dbg_msg("fluffy", "NOPE: ----------------");
+		return false;
+	}
+}
+
 bool CGameControllerAssault::GetSpawnFromClump(vec2 CenterPos, vec2 *pOutPos, float Radius)
 {
 	// start with a radius, see if points are spawnable on the circle at TestPoints
@@ -265,9 +324,11 @@ bool CGameControllerAssault::GetSpawnFromClump(vec2 CenterPos, vec2 *pOutPos, fl
 		{
 			*pOutPos = TestSpawnPos;
 			// record the tick of the first person who spawned
-			if (m_FirstAssaultSpawnTick == -1) {
-				// give 3 ticks of padding
-				m_FirstAssaultSpawnTick = Server()->Tick() + 3;
+			if (m_SpawnAtFlagTick == -1) {
+				// give 2 ticks of padding
+				// first tick is when the first tee spawns (in order to get the flag)
+				// next tick is when everybody else spawns
+				m_SpawnAtFlagTick = Server()->Tick() + 2;
 			}
 			return true;
 		}
@@ -494,7 +555,10 @@ void CGameControllerAssault::StartAssault(bool ResetWorld)
 		return;
 	}
 
-	m_FirstAssaultSpawnTick = -1;
+	m_SpawnAtFlagTick = -1;
+	m_SpawnedFirstAssaultPlayer = false;
+	m_NthAssaultPlayerToSpawn = 0;
+	m_RandomAssaultTeamToSpawnIndex = -1;
 
 	if (ResetWorld)
 	{

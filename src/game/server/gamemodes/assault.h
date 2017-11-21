@@ -50,7 +50,24 @@ private:
 	// if it's -1, it means the round has started but nobody has spawned yet (waiting
 	// for the first spawn)
 	// if it's -2, it means we are past the first spawn
-	int m_FirstAssaultSpawnTick;
+	int m_SpawnAtFlagTick;
+
+	// if spawning near the flag, randomly pick somebody to spawn one tick earlier
+	// than everyone else so that they get the flag.
+	// first we make an array of all the players on the assault team that will spawn at the flag
+	int m_aAssaultTeamToSpawn[MAX_CLIENTS];
+	// use this to keep track of the actual number of players to spawn - maximum of MAX_CLIENTS
+	int m_AssaultTeamToSpawnSize;
+	// we randomly pick a number between 1 and m_AssaultTeamSize
+	// if the (NthAssaultPlayerToSpawn - 1) matches RandomAssaultTeamToSpawnIndex, then they will spawn first and get
+	// the flag. after that, everybody else will spawn.
+	int m_NthAssaultPlayerToSpawn;
+	int m_RandomAssaultTeamToSpawnIndex;
+	// after the first randomly picked assault player has spawned, spawn everybody else
+	bool m_SpawnedFirstAssaultPlayer;
+	// logic is implemented here
+	bool NthPlayerCanSpawn();
+
 
 	// times required to capture the flag for both teams
 	// team with lowest capture time wins
@@ -67,7 +84,7 @@ private:
 	// -1 means it's disabled
 	int m_AssaultTeamSpawnDelay;
 
-	// show the scoreboard for this shit time between rounds
+	// show the scoreboard for this time between rounds
 	int m_AssaultRoundDelay;
 
 	virtual void PostReset();
