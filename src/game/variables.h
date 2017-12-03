@@ -90,6 +90,7 @@ MACRO_CONFIG_INT(SvAssaultFlagNinja, sv_assault_flag_ninja, 0, 0, 1, CFGFLAG_SER
 MACRO_CONFIG_INT(SvAssaultSpawnAtFlag, sv_assault_spawn_at_flag, 1, 0, 2, CFGFLAG_SERVER, "Make the assault team spawn at the assault flag (0 = spawn at normal spawn points, 1 = spawn at flag at first spawn, 2 = always spawn at flag")
 MACRO_CONFIG_INT(SvAssaultRoundDelay, sv_assault_round_delay, 5, 0, 1000, CFGFLAG_SERVER, "Delay in seconds between assault rounds")
 MACRO_CONFIG_INT(SvAssaultSwap, sv_assault_swap, 0, 0, 1, CFGFLAG_SERVER, "Swap assault and defense on assymetrical maps (0 = off, 1 = on)")
+MACRO_CONFIG_INT(SvAssaultReturnFlag, sv_assault_return_flag, 0, 0, 1, CFGFLAG_SERVER, "Return the flag 5 seconds after being dropped")
 
 // debug
 #ifdef CONF_DEBUG // this one can crash the server if not used correctly

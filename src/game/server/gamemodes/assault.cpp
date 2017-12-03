@@ -1183,8 +1183,19 @@ void CGameControllerAssault::Tick()
 			// flag physics
 			if(!m_pAssaultFlag->m_pCarryingCharacter && !m_pAssaultFlag->m_AtStand)
 			{
-				m_pAssaultFlag->m_Vel.y += GameServer()->m_World.m_Core.m_Tuning.m_Gravity;
-				GameServer()->Collision()->MoveBox(&m_pAssaultFlag->m_Pos, &m_pAssaultFlag->m_Vel, vec2(m_pAssaultFlag->ms_PhysSize, m_pAssaultFlag->ms_PhysSize), 0.5f);
+				// return flag after 5 seconds based on sv_assault_return_flag
+				if (
+					g_Config.m_SvAssaultReturnFlag &&
+					Server()->Tick() > m_pAssaultFlag->m_DropTick + Server()->TickSpeed() * 5)
+				{
+					GameServer()->CreateSoundGlobal(SOUND_CTF_RETURN);
+					m_pAssaultFlag->Reset();
+				}
+				else
+				{
+					m_pAssaultFlag->m_Vel.y += GameServer()->m_World.m_Core.m_Tuning.m_Gravity;
+					GameServer()->Collision()->MoveBox(&m_pAssaultFlag->m_Pos, &m_pAssaultFlag->m_Vel, vec2(m_pAssaultFlag->ms_PhysSize, m_pAssaultFlag->ms_PhysSize), 0.5f);
+				}
 			}
 		}
 	}
