@@ -1112,8 +1112,11 @@ void CGameControllerAssault::Tick()
 			// give assault flag
 			if (m_FirstAssaultSpawnTick == -2)
 			{
-				if (
-					m_ClientIDToGiveAssaultFlag != -1 &&
+				if (m_ClientIDToGiveAssaultFlag == -1)
+				{
+					m_FirstAssaultSpawnTick = -3;
+				}
+				else if (
 					READYPLAYER(m_ClientIDToGiveAssaultFlag) &&
 					READYPLAYER(m_ClientIDToGiveAssaultFlag)->GetCharacter())
 				{
