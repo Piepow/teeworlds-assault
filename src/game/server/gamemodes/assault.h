@@ -49,8 +49,14 @@ private:
 	// on the first spawn, the assault team spawns near the flag
 	// if it's -1, it means the round has started but nobody has spawned yet (waiting
 	// for the first spawn)
-	// if it's -2, it means we are past the first spawn
+	// if it's -2, it means we can now give the chosen player the assaultflag
+	// if it's -3, it means we are past the first spawn
 	int m_FirstAssaultSpawnTick;
+
+	// if it's -1, then there is absolute nobody to give the flag -> empty server
+	int m_ClientIDToGiveAssaultFlag;
+	int ChoosePlayerToGiveAssaultFlag();
+	void GiveAssaultFlag(CCharacter *pCharacter);
 
 	// times required to capture the flag for both teams
 	// team with lowest capture time wins

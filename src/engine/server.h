@@ -66,6 +66,10 @@ public:
 
 	virtual void DemoRecorder_HandleAutoStart() = 0;
 	virtual bool DemoRecorder_IsRecording() = 0;
+
+	virtual void RememberGivenFlag(int ClientID, int Team) = 0;
+	virtual void ForgetGivenFlags(int Team) = 0;
+	virtual bool IsClientGivenFlagBefore(int ClientID, int Team) = 0;
 };
 
 class IGameServer : public IInterface

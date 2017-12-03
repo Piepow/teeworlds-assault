@@ -124,7 +124,9 @@ public:
 
 		const IConsole::CCommandInfo *m_pRconCmdToSend;
 
-		void Reset();
+		int m_GivenFlagTeam;
+
+		void Reset(bool ChoseToDisconnect = true);
 	};
 
 	CClient m_aClients[MAX_CLIENTS];
@@ -237,6 +239,12 @@ public:
 	virtual void SnapFreeID(int ID);
 	virtual void *SnapNewItem(int Type, int ID, int Size);
 	void SnapSetStaticsize(int ItemType, int Size);
+
+public:
+	virtual void RememberGivenFlag(int ClientID, int Team);
+	virtual void ForgetGivenFlags(int Team);
+	virtual bool IsClientGivenFlagBefore(int ClientID, int Team);
+
 };
 
 #endif

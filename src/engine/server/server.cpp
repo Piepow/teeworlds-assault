@@ -253,7 +253,7 @@ void CServerBan::ConBanExt(IConsole::IResult *pResult, void *pUser)
 }
 
 
-void CServer::CClient::Reset()
+void CServer::CClient::Reset(bool ChoseToDisconnect)
 {
 	// reset input
 	for(int i = 0; i < 200; i++)
@@ -266,6 +266,11 @@ void CServer::CClient::Reset()
 	m_LastInputTick = -1;
 	m_SnapRate = CClient::SNAPRATE_INIT;
 	m_Score = 0;
+
+	if (ChoseToDisconnect)
+	{
+		m_GivenFlagTeam = -1;
+	}
 }
 
 CServer::CServer() : m_DemoRecorder(&m_SnapshotDelta)
@@ -424,6 +429,7 @@ int CServer::Init()
 		m_aClients[i].m_aClan[0] = 0;
 		m_aClients[i].m_Country = -1;
 		m_aClients[i].m_Snapshots.Init();
+		m_aClients[i].m_GivenFlagTeam = -1;
 	}
 
 	m_CurrentGameTick = 0;
@@ -1326,7 +1332,8 @@ int CServer::Run()
 							continue;
 
 						SendMap(c);
-						m_aClients[c].Reset();
+						// Client didn't chose to disconnect, so send false
+						m_aClients[c].Reset(false);
 						m_aClients[c].m_State = CClient::STATE_CONNECTING;
 					}
 
@@ -1732,3 +1739,30 @@ int main(int argc, const char **argv) // ignore_convention
 	return 0;
 }
 
+void CServer::RememberGivenFlag(int ClientID, int Team)
+{
+	m_aClients[ClientID].m_GivenFlagTeam = Team;
+}
+
+void CServer::ForgetGivenFlags(int Team)
+{
+	for (int i = 0; i < MAX_CLIENTS; ++i)
+	{
+		if (m_aClients[i].m_GivenFlagTeam == Team)
+		{
+			m_aClients[i].m_GivenFlagTeam = -1;
+		}
+	}
+}
+
+bool CServer::IsClientGivenFlagBefore(int ClientID, int Team)
+{
+	if (m_aClients[ClientID].m_GivenFlagTeam == Team)
+	{
+		return true;
+	}
+	else
+	{
+		return false;
+	}
+}

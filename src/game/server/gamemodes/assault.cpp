@@ -12,7 +12,7 @@
 #include "assault.h"
 
 #define READYPLAYER(C) (((C) < 0 || (C) >= MAX_CLIENTS) ? 0 : (GameServer()->IsClientReady(C) && GameServer()->IsClientPlayer(C)) ? GameServer()->m_apPlayers[C] : 0)
-#define FORFLAGS(F) for(CFlag *F = m_pBaseFlag; F != nullptr; F = (F == m_pBaseFlag ? m_pAssaultFlag : nullptr))
+#define FORFLAGS(F) for (CFlag *F = m_pBaseFlag; F != nullptr; F = (F == m_pBaseFlag ? m_pAssaultFlag : nullptr))
 
 CGameControllerAssault::CGameControllerAssault(class CGameContext *pGameServer)
 : IGameController(pGameServer)
@@ -189,16 +189,14 @@ bool CGameControllerAssault::CanSpawn(int Team, vec2 *pOutPos)
 					// only spawn at flag for the first spawn
 					if (
 						m_FirstAssaultSpawnTick == -1 ||
-						Server()->Tick() <= m_FirstAssaultSpawnTick)
+						(
+							m_FirstAssaultSpawnTick > 0 &&
+							Server()->Tick() <= m_FirstAssaultSpawnTick))
 					{
+						dbg_msg("fluffy", "Going to spawn at flag");
 						// here just continue to case 2
 					}
-					else
-					{
-						// we are past the first spawn, so set it to -2 so that doesn't trigger again
-						m_FirstAssaultSpawnTick = -2;
-						break;
-					}
+					break;
 				case 2:
 					// spawn at the flag
 					if (m_pAssaultFlag)
@@ -264,7 +262,6 @@ bool CGameControllerAssault::GetSpawnFromClump(vec2 CenterPos, vec2 *pOutPos, fl
 		if (IsSpawnable(TestSpawnPos))
 		{
 			*pOutPos = TestSpawnPos;
-			// record the tick of the first person who spawned
 			if (m_FirstAssaultSpawnTick == -1) {
 				// give 3 ticks of padding
 				m_FirstAssaultSpawnTick = Server()->Tick() + 3;
@@ -591,6 +588,33 @@ void CGameControllerAssault::StartAssault(bool ResetWorld)
 	m_AssaultAbsoluteStartTick = Server()->Tick();
 	m_AssaultOverTick = -1;
 	SetAssaultFlags();
+	m_ClientIDToGiveAssaultFlag = ChoosePlayerToGiveAssaultFlag();
+}
+
+int CGameControllerAssault::ChoosePlayerToGiveAssaultFlag()
+{
+	int Loops = 2;
+	while (Loops > 0)
+	{
+		// loop through all and return if not given a flag before
+		for (int i = 0; i < MAX_CLIENTS; i++)
+		{
+			if (
+				READYPLAYER(i) &&
+				READYPLAYER(i)->GetTeam() == m_AssaultTeam &&
+				!Server()->IsClientGivenFlagBefore(i, m_AssaultTeam))
+			{
+				Server()->RememberGivenFlag(i, m_AssaultTeam);
+				return i;
+			}
+		}
+
+		// if we got here, then everybody has been given
+		// a flag. Forget them and then we can leave
+		Server()->ForgetGivenFlags(m_AssaultTeam);
+		--Loops;
+	}
+	return -1;
 }
 
 void CGameControllerAssault::EndAssault(bool CapturedFlag)
@@ -875,6 +899,14 @@ void CGameControllerAssault::Tick()
 		return;
 	}
 
+	// right after the assault team first spawns, set the flag
+	if (
+		m_FirstAssaultSpawnTick != -3 &&
+		Server()->Tick() > m_FirstAssaultSpawnTick)
+	{
+		m_FirstAssaultSpawnTick = -2;
+	}
+
 	// note: we also check this in DoWinCheck() to see if it's time to EndRound()
 	if (!m_FinishedAllAssault)
 	{
@@ -1078,62 +1110,35 @@ void CGameControllerAssault::Tick()
 		}
 		else
 		{
-			CCharacter *apCloseCCharacters[MAX_CLIENTS];
-			int Num = GameServer()->m_World.FindEntities(m_pAssaultFlag->m_Pos, CFlag::ms_PhysSize, (CEntity**)apCloseCCharacters, MAX_CLIENTS, CGameWorld::ENTTYPE_CHARACTER);
-			for(int i = 0; i < Num; i++)
+			dbg_msg("fluffy", "m_FirstAssaultSpawnTick: %d", m_FirstAssaultSpawnTick);
+			dbg_msg("fluffy", "m_ClientIDToGiveAssaultFlag: %d", m_ClientIDToGiveAssaultFlag);
+
+			// give assault flag
+			if (m_FirstAssaultSpawnTick == -2)
 			{
-				if(!apCloseCCharacters[i]->IsAlive() || apCloseCCharacters[i]->GetPlayer()->GetTeam() == TEAM_SPECTATORS || GameServer()->Collision()->IntersectLine(m_pAssaultFlag->m_Pos, apCloseCCharacters[i]->m_Pos, NULL, NULL))
-					continue;
-
-				// only AssaultTeam can pick up the AssaultFlag
-				if (apCloseCCharacters[i]->GetPlayer()->GetTeam() == m_AssaultTeam)
+				if (
+					m_ClientIDToGiveAssaultFlag != -1 &&
+					READYPLAYER(m_ClientIDToGiveAssaultFlag) &&
+					READYPLAYER(m_ClientIDToGiveAssaultFlag)->GetCharacter())
 				{
-					// take the flag
-					if (m_pAssaultFlag->m_AtStand)
+					GiveAssaultFlag(GameServer()->m_apPlayers[m_ClientIDToGiveAssaultFlag]->GetCharacter());
+					m_FirstAssaultSpawnTick = -3;
+				}
+			}
+			else if (m_FirstAssaultSpawnTick == -3)
+			{
+				CCharacter *apCloseCCharacters[MAX_CLIENTS];
+				int Num = GameServer()->m_World.FindEntities(m_pAssaultFlag->m_Pos, CFlag::ms_PhysSize, (CEntity**)apCloseCCharacters, MAX_CLIENTS, CGameWorld::ENTTYPE_CHARACTER);
+				for (int i = 0; i < Num; i++)
+				{
+					if (!apCloseCCharacters[i]->IsAlive() || apCloseCCharacters[i]->GetPlayer()->GetTeam() == TEAM_SPECTATORS || GameServer()->Collision()->IntersectLine(m_pAssaultFlag->m_Pos, apCloseCCharacters[i]->m_Pos, NULL, NULL))
+						continue;
+
+					// only AssaultTeam can pick up the AssaultFlag
+					if (apCloseCCharacters[i]->GetPlayer()->GetTeam() == m_AssaultTeam)
 					{
-						m_pAssaultFlag->m_GrabTick = Server()->Tick();
+						GiveAssaultFlag(apCloseCCharacters[i]);
 					}
-
-					m_pAssaultFlag->m_AtStand = 0;
-					m_pAssaultFlag->m_pCarryingCharacter = apCloseCCharacters[i];
-					if (g_Config.m_SvAssaultFlagNinja)
-					{
-						m_pAssaultFlag->m_pCarryingCharacter->GiveNinja(true);
-					}
-					m_pAssaultFlag->m_pCarryingCharacter->GetPlayer()->m_Score += 1;
-
-					char aBuf[256];
-					str_format(aBuf, sizeof(aBuf), "flag_grab player='%d:%s'",
-						m_pAssaultFlag->m_pCarryingCharacter->GetPlayer()->GetCID(),
-						Server()->ClientName(m_pAssaultFlag->m_pCarryingCharacter->GetPlayer()->GetCID()));
-					GameServer()->Console()->Print(IConsole::OUTPUT_LEVEL_DEBUG, "game", aBuf);
-
-					for(int c = 0; c < MAX_CLIENTS; c++)
-					{
-						CPlayer *pPlayer = GameServer()->m_apPlayers[c];
-						if(!pPlayer)
-							continue;
-
-						if (
-							pPlayer->GetTeam() == TEAM_SPECTATORS &&
-							pPlayer->m_SpectatorID != SPEC_FREEVIEW &&
-							GameServer()->m_apPlayers[pPlayer->m_SpectatorID] &&
-							GameServer()->m_apPlayers[pPlayer->m_SpectatorID]->GetTeam() == m_AssaultTeam)
-						{
-							GameServer()->CreateSoundGlobal(SOUND_CTF_GRAB_EN, c);
-						}
-						else if (pPlayer->GetTeam() == m_AssaultTeam)
-						{
-							GameServer()->CreateSoundGlobal(SOUND_CTF_GRAB_EN, c);
-						}
-						else
-						{
-							GameServer()->CreateSoundGlobal(SOUND_CTF_GRAB_PL, c);
-						}
-					}
-					// demo record entry
-					GameServer()->CreateSoundGlobal(SOUND_CTF_GRAB_EN, -2);
-					break;
 				}
 			}
 
@@ -1145,4 +1150,55 @@ void CGameControllerAssault::Tick()
 			}
 		}
 	}
+}
+
+void CGameControllerAssault::GiveAssaultFlag(CCharacter* pCharacter)
+{
+	// take the flag
+	if (m_pAssaultFlag->m_AtStand)
+	{
+		m_pAssaultFlag->m_GrabTick = Server()->Tick();
+	}
+
+	m_pAssaultFlag->m_AtStand = false;
+	m_pAssaultFlag->m_pCarryingCharacter = pCharacter;
+
+	if (g_Config.m_SvAssaultFlagNinja)
+	{
+		m_pAssaultFlag->m_pCarryingCharacter->GiveNinja(true);
+	}
+	m_pAssaultFlag->m_pCarryingCharacter->GetPlayer()->m_Score += 1;
+
+	char aBuf[256];
+	str_format(aBuf, sizeof(aBuf), "flag_grab player='%d:%s'",
+		m_pAssaultFlag->m_pCarryingCharacter->GetPlayer()->GetCID(),
+		Server()->ClientName(m_pAssaultFlag->m_pCarryingCharacter->GetPlayer()->GetCID()));
+	GameServer()->Console()->Print(IConsole::OUTPUT_LEVEL_DEBUG, "game", aBuf);
+
+	for(int c = 0; c < MAX_CLIENTS; c++)
+	{
+		CPlayer *pPlayer = GameServer()->m_apPlayers[c];
+		if(!pPlayer)
+			continue;
+
+		if (
+			pPlayer->GetTeam() == TEAM_SPECTATORS &&
+			pPlayer->m_SpectatorID != SPEC_FREEVIEW &&
+			GameServer()->m_apPlayers[pPlayer->m_SpectatorID] &&
+			GameServer()->m_apPlayers[pPlayer->m_SpectatorID]->GetTeam() == m_AssaultTeam)
+		{
+			GameServer()->CreateSoundGlobal(SOUND_CTF_GRAB_EN, c);
+		}
+		else if (pPlayer->GetTeam() == m_AssaultTeam)
+		{
+			GameServer()->CreateSoundGlobal(SOUND_CTF_GRAB_EN, c);
+		}
+		else
+		{
+			GameServer()->CreateSoundGlobal(SOUND_CTF_GRAB_PL, c);
+		}
+	}
+
+	// demo record entry
+	GameServer()->CreateSoundGlobal(SOUND_CTF_GRAB_EN, -2);
 }
