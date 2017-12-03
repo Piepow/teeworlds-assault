@@ -43,6 +43,8 @@ private:
 	// used in calculating the flag capture time.
 	int m_AssaultAbsoluteStartTick;
 
+	int m_AssaultTimelimit;
+
 	// I am calling StartAssault() once at the first tick
 	bool m_AssaultInitialized;
 

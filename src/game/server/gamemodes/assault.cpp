@@ -28,6 +28,7 @@ CGameControllerAssault::CGameControllerAssault(class CGameContext *pGameServer)
 	m_aCaptureTime[1] = -1.0f;
 	m_AssaultOverTick = -1;
 	m_AssaultStartTick = Server()->Tick();
+	m_AssaultTimelimit = g_Config.m_SvAssaultTimelimit;
 	m_FinishedAllAssault = false;
 
 	if (g_Config.m_SvAssaultSpawnDelay > 0)
@@ -124,11 +125,14 @@ void CGameControllerAssault::DoWincheck()
 		}
 		else
 		{
-			// or if time is up
-			int TimeLimitTicks = g_Config.m_SvAssaultTimelimit * 60 * Server()->TickSpeed();
-			if ((Server()->Tick() - m_AssaultStartTick) >= TimeLimitTicks)
+			if (m_AssaultTeam > 0)
 			{
-				EndAssault(false);
+				// or if time is up
+				int TimeLimitTicks = m_AssaultTimelimit * 60 * Server()->TickSpeed();
+				if ((Server()->Tick() - m_AssaultStartTick) >= TimeLimitTicks)
+				{
+					EndAssault(false);
+				}
 			}
 		}
 
@@ -483,7 +487,7 @@ void CGameControllerAssault::SetAssaultFlags()
 
 void CGameControllerAssault::StartAssault(bool ResetWorld)
 {
-
+	m_AssaultTimelimit = g_Config.m_SvAssaultTimelimit;
 	if (m_AssaultTeamSpawnDelay > 0)
 	{
 		// we will call StartAssault once the assault team spawns
@@ -504,7 +508,6 @@ void CGameControllerAssault::StartAssault(bool ResetWorld)
 		// another way of saying "if it's the second assault round"
 		if (m_aCaptureTime[m_AssaultTeam ^ 1] != -1.0f)
 		{
-			int TimeLimitTicks = g_Config.m_SvAssaultTimelimit * 60 * Server()->TickSpeed();
 			if (m_aCaptureTime[m_AssaultTeam ^ 1] == -2.0f)
 			{
 				// first assault team failed to capture the flag
@@ -513,7 +516,14 @@ void CGameControllerAssault::StartAssault(bool ResetWorld)
 			}
 			else
 			{
+				int TimeLimitTicks = m_AssaultTimelimit * 60 * Server()->TickSpeed();
 				int FirstCaptureTicks = (int)(m_aCaptureTime[m_AssaultTeam ^ 1] * Server()->TickSpeed());
+				if (m_AssaultTimelimit == 0)
+				{
+					m_AssaultTimelimit = ((FirstCaptureTicks / (Server()->TickSpeed() * 60)) + 1);
+					TimeLimitTicks = m_AssaultTimelimit * Server()->TickSpeed() * 60;
+				}
+
 				// because: Timer = Timelimit - (Tick - StartTick)
 				// and: Timer = CaptureTicks
 				// then: StartTick = (CaptureTicks - Timelimit) + Tick
@@ -770,8 +780,17 @@ void CGameControllerAssault::Snap(int SnappingClient)
 	pGameInfoObj->m_RoundStartTick = m_AssaultStartTick;
 	pGameInfoObj->m_WarmupTimer = GameServer()->m_World.m_Paused ? m_UnpauseTimer : m_Warmup;
 
-	pGameInfoObj->m_ScoreLimit = g_Config.m_SvScorelimit;
-	pGameInfoObj->m_TimeLimit = g_Config.m_SvAssaultTimelimit;
+	if (m_aCaptureTime[m_AssaultTeam ^ 1] != -1.0f)
+	{
+		if (g_Config.m_SvScorelimit > 0)
+		{
+			pGameInfoObj->m_ScoreLimit = g_Config.m_SvScorelimit;
+		}
+		{
+			pGameInfoObj->m_ScoreLimit = 1;
+		}
+	}
+	pGameInfoObj->m_TimeLimit = m_AssaultTimelimit;
 
 	pGameInfoObj->m_RoundNum = (str_length(g_Config.m_SvMaprotation) && g_Config.m_SvRoundsPerMap) ? g_Config.m_SvRoundsPerMap : 0;
 	pGameInfoObj->m_RoundCurrent = m_RoundCount+1;
