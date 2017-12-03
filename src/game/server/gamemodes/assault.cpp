@@ -126,7 +126,7 @@ void CGameControllerAssault::DoWincheck()
 		{
 			// or if time is up
 			int TimeLimitTicks = g_Config.m_SvAssaultTimelimit * 60 * Server()->TickSpeed();
-			if((Server()->Tick() - m_AssaultStartTick) >= TimeLimitTicks)
+			if ((Server()->Tick() - m_AssaultStartTick) >= TimeLimitTicks)
 			{
 				EndAssault(false);
 			}
@@ -193,7 +193,6 @@ bool CGameControllerAssault::CanSpawn(int Team, vec2 *pOutPos)
 							m_FirstAssaultSpawnTick > 0 &&
 							Server()->Tick() <= m_FirstAssaultSpawnTick))
 					{
-						dbg_msg("fluffy", "Going to spawn at flag");
 						// here just continue to case 2
 					}
 					break;
@@ -1110,9 +1109,6 @@ void CGameControllerAssault::Tick()
 		}
 		else
 		{
-			dbg_msg("fluffy", "m_FirstAssaultSpawnTick: %d", m_FirstAssaultSpawnTick);
-			dbg_msg("fluffy", "m_ClientIDToGiveAssaultFlag: %d", m_ClientIDToGiveAssaultFlag);
-
 			// give assault flag
 			if (m_FirstAssaultSpawnTick == -2)
 			{
