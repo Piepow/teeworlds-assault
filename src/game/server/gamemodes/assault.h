@@ -42,7 +42,6 @@ private:
 	// reflect the exact tick that round starts. So we use this instead. This is
 	// used in calculating the flag capture time.
 	int m_AssaultAbsoluteStartTick;
-
 	int m_AssaultTimelimit;
 
 	// I am calling StartAssault() once at the first tick

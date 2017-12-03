@@ -199,7 +199,11 @@ bool CGameControllerAssault::CanSpawn(int Team, vec2 *pOutPos)
 					{
 						// here just continue to case 2
 					}
-					break;
+					else
+					{
+						// FirstSpawnTick is over, just spawn at normal
+						break;
+					}
 				case 2:
 					// spawn at the flag
 					if (m_pAssaultFlag)
@@ -225,19 +229,29 @@ bool CGameControllerAssault::CanSpawn(int Team, vec2 *pOutPos)
 
 		// first try own team spawn, then normal spawn and then enemy, which
 		// depends on what m_AssaultTeam is
+		// sv_assault_swap is factored in too
 		// look in IGameController::OnEntity() at the cases for spawns
 
-		// Team -> m_AssaultTeam = SpawnTeam
-		// 0 -> 0 = 1 + 1 = 2
-		// 1 -> 0 = 0 + 1 = 1
-		// 0 -> 1 = 0 + 1 = 1
-		// 1 -> 1 = 1 + 1 = 2
-		EvaluateSpawnType(&Eval, 1 + !(Team ^ m_AssaultTeam));
+		// Team -> m_AssaultTeam -> Swap = SpawnTeam
+
+		// 0 -> 0 -> 0 = 1 + 1 = 2
+		// 1 -> 0 -> 0 = 0 + 1 = 1
+		// 0 -> 1 -> 0 = 0 + 1 = 1
+		// 1 -> 1 -> 0 = 1 + 1 = 2
+
+		// 0 -> 0 -> 1 = 0 + 1 = 1
+		// 1 -> 0 -> 1 = 1 + 1 = 2
+		// 0 -> 1 -> 1 = 1 + 1 = 2
+		// 1 -> 1 -> 1 = 0 + 1 = 1
+
+		// (!(Team ^ m_AssaultTeam) ^ g_Config.m_SvAssaultSwap) + 1
+
+		EvaluateSpawnType(&Eval, (!(Team ^ m_AssaultTeam) ^ g_Config.m_SvAssaultSwap) + 1);
 		if(!Eval.m_Got)
 		{
 			EvaluateSpawnType(&Eval, 0);
 			if(!Eval.m_Got)
-				EvaluateSpawnType(&Eval, 1 + (Team ^ m_AssaultTeam));
+				EvaluateSpawnType(&Eval, ((Team ^ m_AssaultTeam) ^ g_Config.m_SvAssaultSwap) + 1);
 		}
 	}
 	else
@@ -466,9 +480,14 @@ void CGameControllerAssault::SetAssaultFlags()
 		{
 			m_pBaseFlag->Reset();
 		}
+		// 0 -> 1 = 1
+		// 1 -> 1 = 0
+
+		// (m_AssaultTeam ^ g_Config.m_SvAssaultSwap
+
 		m_pBaseFlag = new CFlag(&GameServer()->m_World, m_AssaultTeam, true);
-		m_pBaseFlag->m_StandPos = m_aFlagPositions[TEAM_RED];
-		m_pBaseFlag->m_Pos = m_aFlagPositions[TEAM_RED];
+		m_pBaseFlag->m_StandPos = m_aFlagPositions[TEAM_RED ^ g_Config.m_SvAssaultSwap];
+		m_pBaseFlag->m_Pos = m_aFlagPositions[TEAM_RED ^ g_Config.m_SvAssaultSwap];
 		GameServer()->m_World.InsertEntity(m_pBaseFlag);
 	}
 	if (m_aFlagPositions[m_AssaultTeam ^ 1])
@@ -478,8 +497,8 @@ void CGameControllerAssault::SetAssaultFlags()
 			m_pAssaultFlag->Reset();
 		}
 		m_pAssaultFlag = new CFlag(&GameServer()->m_World, m_AssaultTeam ^ 1);
-		m_pAssaultFlag->m_StandPos = m_aFlagPositions[TEAM_BLUE];
-		m_pAssaultFlag->m_Pos = m_aFlagPositions[TEAM_BLUE];
+		m_pAssaultFlag->m_StandPos = m_aFlagPositions[TEAM_BLUE ^ g_Config.m_SvAssaultSwap];
+		m_pAssaultFlag->m_Pos = m_aFlagPositions[TEAM_BLUE ^ g_Config.m_SvAssaultSwap];
 		GameServer()->m_World.InsertEntity(m_pAssaultFlag);
 	}
 
@@ -520,6 +539,7 @@ void CGameControllerAssault::StartAssault(bool ResetWorld)
 				int FirstCaptureTicks = (int)(m_aCaptureTime[m_AssaultTeam ^ 1] * Server()->TickSpeed());
 				if (m_AssaultTimelimit == 0)
 				{
+					// set timelimit to nearest minute above capture time
 					m_AssaultTimelimit = ((FirstCaptureTicks / (Server()->TickSpeed() * 60)) + 1);
 					TimeLimitTicks = m_AssaultTimelimit * Server()->TickSpeed() * 60;
 				}
@@ -919,7 +939,7 @@ void CGameControllerAssault::Tick()
 
 	// right after the assault team first spawns, set the flag
 	if (
-		m_FirstAssaultSpawnTick != -3 &&
+		m_FirstAssaultSpawnTick > 0 &&
 		Server()->Tick() > m_FirstAssaultSpawnTick)
 	{
 		m_FirstAssaultSpawnTick = -2;
